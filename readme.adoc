@@ -1,0 +1,31 @@
+= tuint
+
+tuint is a collection of small _TUI_ applications for Windows _NT_ (scripts currently).
+
+They add some "missing component" when one wants to use windows interactively in a terminal-only environment.
+
+Ideally just download the programs and start them, no external dependencies are required.
+They are designed to be used over SSH or in headless environments like windows nano core
+
+Those programs should work on "minimal-footprint headless" versions of Windows, like Windows Nano Server.
+
+
+== List of TUI program
+
+=== Registry Viewer/Editor (`regedit.exe`)
+
+Navigate the registry, add/remove keys, add/remove/edit values
+
+=== Task Scheduler (`taskschd.msc`)
+
+Enable/disable tasks
+
+=== Services (`services.msc`)
+
+Enable/disable/start/stop services
+
+== Programs that will not be added
+
+There are already many TUI programs for Windows, this repository is a collection of programs I could not find elsewhere.
+
+Thus if there is already a "native" (non-WSL, non-cygwin, ...) and well-supported TUI program for Windows, then there is no reason to provide here an inferior alternative here, like a file manager or a text editor.
