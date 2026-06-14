@@ -51,8 +51,6 @@ function Print-Diff {
     [Parameter(Mandatory)][ScreenBuffer]$New
   )
 
-  $raw = $Host.UI.RawUI;
-
   for ($y = 0; $y -lt $New.Height; $y++) {
     $rowOld = $Old.Cells[$y];
     $rowNew = $New.Cells[$y];
@@ -75,8 +73,7 @@ function Print-Diff {
       $length = $x - $start;
 
       [Console]::SetCursorPosition($start, $y);
-      $chars = [string]::new($rowNew, $start, $length);
-      [Console]::Write( $chars );
+      [Console]::Out.Write($rowNew, $start, $length);
       [Array]::Copy($rowNew, $start, $rowOld, $start, $length);
     }
   }
