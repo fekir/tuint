@@ -79,7 +79,7 @@ function Print-Diff {
       $pos.Y = $y;
       $raw.CursorPosition = $pos;
       $chars = [string]::new($rowNew, $start, $length);
-      Write-Host $chars -NoNewline;
+      [Console]::Write( $chars );
       [Array]::Copy($rowNew, $start, $rowOld, $start, $length);
     }
   }
@@ -164,7 +164,6 @@ function Invoke-InlineEditor {
   $NewBuf.SetLine($Row+2, "");
 
   try {
-    Write-Host "$([char]27)[6 q" -NoNewline; # thin cursor
     [Console]::CursorVisible = $true;
     Print-Diff -Old $OldBuf -New $NewBuf;
     [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
@@ -219,7 +218,6 @@ function Invoke-InlineEditor {
       [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
     }
   } finally {
-    Write-Host "$([char]27)[2 q" -NoNewline; # block cursor, but might not be the original cursor type...
     [Console]::CursorVisible = $false;
   }
 }
@@ -307,9 +305,9 @@ function Invoke-CursesUI {
   $old = $null;
   $new = $null;
 
-  Write-Output "Loading scheduled tasks...";
+  [Console]::WriteLine( "Loading scheduled tasks..." );
   $allrows       = Get-TaskRows;
-  $filter        = ""
+  $filter        = "";
   $rows          = @($allrows | Where-Object { $_.TaskName -match $filter });
   $selected      = 0;
   $top           = 0;

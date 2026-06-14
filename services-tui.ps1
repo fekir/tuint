@@ -79,7 +79,7 @@ function Print-Diff {
       $pos.Y = $y;
       $raw.CursorPosition = $pos;
       $chars = [string]::new($rowNew, $start, $length);
-      Write-Host $chars -NoNewline;
+      [Console]::Write( $chars );
       [Array]::Copy($rowNew, $start, $rowOld, $start, $length);
     }
   }
@@ -164,7 +164,6 @@ function Invoke-InlineEditor {
   $NewBuf.SetLine($Row+2, "");
 
   try {
-    Write-Host "$([char]27)[6 q" -NoNewline; # thin cursor
     [Console]::CursorVisible = $true;
     Print-Diff -Old $OldBuf -New $NewBuf;
     [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
@@ -219,7 +218,6 @@ function Invoke-InlineEditor {
       [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
     }
   } finally {
-    Write-Host "$([char]27)[2 q" -NoNewline; # block cursor, but might not be the original cursor type...
     [Console]::CursorVisible = $false;
   }
 }
@@ -309,13 +307,13 @@ function Invoke-CursesUI {
   $old = $null;
   $new = $null;
 
-  Write-Output "Loading services..."
+  [Console]::WriteLine( "Loading services..." );
   $allrows       = Get-ServiceRows;
-  $filter        = ""
+  $filter        = "";
   $rows          = @($allrows | Where-Object { $_.DisplayName -match $filter });
   $selected      = 0;
   $top           = 0;
-  $status        = "Loaded $($rows.Count) services"
+  $status        = "Loaded $($rows.Count) services";
   $lastSize      = $raw.WindowSize;
 
   Init-Buffers -old ([ref]$old) -new ([ref]$new);
@@ -387,7 +385,7 @@ function Invoke-CursesUI {
             $allrows = Get-ServiceRows;
             $rows        = @($allrows | Where-Object { $_.DisplayName -match $filter });
           } catch {
-            $status = "Failed to modify service: $_".Trim();
+            $status = "Failed to modify '$($item.DisplayName)': $_".Trim();
           }
         }
 
@@ -401,7 +399,7 @@ function Invoke-CursesUI {
             $allrows = Get-ServiceRows;
             $rows    = @($allrows | Where-Object { $_.DisplayName -match $filter });
           } catch {
-            $status = "Failed to enable $($item.DisplayName): $_".Trim();
+            $status = "Failed to enable '$($item.DisplayName)': $_".Trim();
           }
         }
 
@@ -415,7 +413,7 @@ function Invoke-CursesUI {
             $allrows = Get-ServiceRows;
             $rows        = @($allrows | Where-Object { $_.DisplayName -match $filter });
           } catch {
-            $status = "Failed to disable $($item.DisplayName): $_".Trim();
+            $status = "Failed to disable '$($item.DisplayName)': $_".Trim();
           }
         }
 

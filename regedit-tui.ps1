@@ -79,7 +79,7 @@ function Print-Diff {
       $pos.Y = $y;
       $raw.CursorPosition = $pos;
       $chars = [string]::new($rowNew, $start, $length);
-      Write-Host $chars -NoNewline;
+      [Console]::Write( $chars );
       [Array]::Copy($rowNew, $start, $rowOld, $start, $length);
     }
   }
@@ -164,7 +164,6 @@ function Invoke-InlineEditor {
   $NewBuf.SetLine($Row+2, "");
 
   try {
-    Write-Host "$([char]27)[6 q" -NoNewline; # thin cursor
     [Console]::CursorVisible = $true;
     Print-Diff -Old $OldBuf -New $NewBuf;
     [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
@@ -219,7 +218,6 @@ function Invoke-InlineEditor {
       [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
     }
   } finally {
-    Write-Host "$([char]27)[2 q" -NoNewline; # block cursor, but might not be the original cursor type...
     [Console]::CursorVisible = $false;
   }
 }
@@ -323,10 +321,10 @@ function Get-RegistryKey {
     [bool]$Writable
   )
 
-  $h = $script:RegistryHives[$HiveIndex]
+  $h = $script:RegistryHives[$HiveIndex];
   $base = [RegistryKey]::OpenBaseKey($h.Hive, [RegistryView]::Default);
   if ([string]::IsNullOrWhiteSpace($Path)) {
-    return $base
+    return $base;
   }
   $sub = $base.OpenSubKey($Path, $Writable);
   $base.close();
@@ -409,8 +407,8 @@ function Edit-RegistryValue {
 
 function Invoke-CursesUI {
   param(
-    [string]$path,
-    [bool]$Writable
+    [Parameter(Mandatory)][string]$path,
+    [Parameter(Mandatory)][bool]$Writable
   )
   $raw = $Host.UI.RawUI
 
@@ -547,7 +545,7 @@ function Invoke-CursesUI {
           $currentKey = Get-RegistryKey -HiveIndex $hiveIndex -Path $path -Writable $Writable;
           $rows       = Get-RegistryRows -Key $currentKey;
           $selected   = 0;
-          $status   = "Registry hive reloaded";
+          $status     = "Registry hive reloaded";
         }
 
         "D6" { if( $key.Modifiers -cne "Alt" ) { break ;} $_ = "F6"; }
@@ -734,7 +732,7 @@ function Invoke-CursesUI {
 
 
 $helpFlags = @("--help", "-h", "/?", "?", "-help");
-$PathValue="";
+$PathValue="HKCU:/";
 $Writable=$true;
 for ($i = 0; $i -lt $Args.Count; $i++) {
   $arg = $Args[$i]
