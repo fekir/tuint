@@ -158,9 +158,9 @@ function Invoke-InlineEditor {
   $NewBuf.SetLine($Row+2, "");
 
   try {
-    [Console]::CursorVisible = $true;
     Print-Diff -Old $OldBuf -New $NewBuf;
     [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
+    [Console]::CursorVisible = $true;
 
     while ($true) {
       $key = [Console]::ReadKey($true);

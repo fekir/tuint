@@ -156,9 +156,9 @@ function Invoke-InlineEditor {
   $NewBuf.SetLine($Row+2, "");
 
   try {
-    [Console]::CursorVisible = $true;
     Print-Diff -Old $OldBuf -New $NewBuf;
     [Console]::SetCursorPosition($Prompt.Length + $cursor, $Row);
+    [Console]::CursorVisible = $true;
 
     while ($true) {
       $key = [Console]::ReadKey($true);
@@ -366,10 +366,10 @@ function Invoke-CursesUI {
             Draw-UI -buf $new -Header $header -rows $rows -selected $selected -top $top -status $status;
             Print-Diff -Old $old -New $new;
             if ( $item.Enabled -eq "True" ) {
-	      Disable-NetFirewallRule -Name $item.Name -ErrorAction Stop | Out-Null;
+              Disable-NetFirewallRule -Name $item.Name -ErrorAction Stop | Out-Null;
               $status = "Disabled $($item.DisplayName)";
             } else {
-	      Enable-NetFirewallRule -Name $item.Name -ErrorAction Stop | Out-Null;
+              Enable-NetFirewallRule -Name $item.Name -ErrorAction Stop | Out-Null;
               $status = "Enabled $($item.DisplayName)";
             }
             $allrows     = Get-FwRules;
