@@ -72,10 +72,7 @@ function Print-Diff {
 
       $length = $x - $start;
 
-      $pos = $raw.CursorPosition;
-      $pos.X = $start;
-      $pos.Y = $y;
-      $raw.CursorPosition = $pos;
+      [Console]::SetCursorPosition($start, $y);
       $chars = [string]::new($rowNew, $start, $length);
       [Console]::Write( $chars );
       [Array]::Copy($rowNew, $start, $rowOld, $start, $length);
