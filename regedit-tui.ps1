@@ -249,8 +249,7 @@ function Draw-UI {
 
   foreach ($r in $visibleRows) {
     $marker = if ($index -eq $selected) { '>' } else { ' ' };
-    $kind   = if ($r.Type -ceq 'Value') { $r.ValueKind } else { '' };
-    $line   = $fmt -f $marker, $r.Name, $kind, $r.Value;
+    $line   = $fmt -f $marker, $r.Name, $r.ValueKind, $r.Value;
     $buf.SetLine($row, $line);
     $row++;
     $index++;
@@ -337,7 +336,7 @@ function Get-RegistryRows {
     ValueKind = '';
   })
 
-  if (-not $Key) { return $rows }
+  if (-not $Key) { return ,$rows }
 
   foreach ($name in $Key.GetSubKeyNames()) {
     $rows.Add([pscustomobject]@{
@@ -410,12 +409,17 @@ function Invoke-CursesUI {
   $new = $null;
 
   $hiveIndex     = 1;
-  if ($path -match '^[A-Za-z_]+:') {
-    $path = $path -replace '^HKEY_LOCAL_MACHINE', 'HKLM'
-    $path = $path -replace '^HKEY_CURRENT_USER', 'HKCU'
-    $path = $path -replace '^HKEY_CLASSES_ROOT', 'HKCR'
-    $path = $path -replace '^HKEY_USERS', 'HKU'
-    $path = $path -replace '^HKEY_CURRENT_CONFIG', 'HKCC'
+  if ($path -match '^[A-Za-z_]+[:\\/]') {
+    $path = $path -replace '^HKEY_LOCAL_MACHINE' , 'HKLM';
+    $path = $path -replace '^HKEY_CURRENT_USER'  , 'HKCU';
+    $path = $path -replace '^HKEY_CLASSES_ROOT'  , 'HKCR';
+    $path = $path -replace '^HKEY_USERS'         , 'HKU' ;
+    $path = $path -replace '^HKEY_CURRENT_CONFIG', 'HKCC';
+    $path = $path -replace '^HKLM[:\\/]', 'HKLM:';
+    $path = $path -replace '^HKCU[:\\/]', 'HKCU:';
+    $path = $path -replace '^HKCR[:\\/]', 'HKCR:';
+    $path = $path -replace '^HKU[:\\/]' , 'HKU:' ;
+    $path = $path -replace '^HKCC[:\\/]', 'HKCC:';
     $drive = (Split-Path $path -Qualifier).Split(':')[0];
     $hiveIndex = ([string[]]$script:RegistryHives.Name).IndexOf($drive);
     $path = (Split-Path $path -NoQualifier);
@@ -466,7 +470,7 @@ function Invoke-CursesUI {
       switch -CaseSensitive ($key.Key) {
 
         "UpArrow" {
-          if ( ($key.Modifiers -ceq "Alt" ) -and ($path -ne '')) {
+          if ( ($key.Modifiers -ceq "Shift" ) -and ($path -ne '')) { # NOTE: Alt would be better, but needs to use $raw.ReadKey("NoEcho, IncludeKeyDown") instead of [Console]::ReadKey
             $parts = $path -split '\\';
             $path = if ($parts.Count -gt 1) { $parts[0..($parts.Count-2)] -join '\' } else { '' };
             $currentKey.close();
@@ -588,13 +592,14 @@ function Invoke-CursesUI {
           if (-not $Writable) { $status = "Key/Value creation not supported in read-only mode"; break; }
           $type = Show-ChooseDialog -OldBuf $old -NewBuf $new -Message "Choose what key/value to create" -Buttons @("Key",
            "Value(String)", "Value(DWord)", "Value(QWord)", "Value(Binary)", "Value(MultiString)", "Value(ExpandString)",
+           "Key(Volatile)",
            "Cancel"
           );
           # NOTE: missing optiona for making volatile key
           if( $type -ceq "Cancel"){ $status = "Creation of Key/value cancelled"; break;}
 
-          if( $type -ceq "Key"){
-            $description = "Insert Key name to create";
+          if( ($type -ceq "Key") -or ($type -ceq "Key(Volatile)")) {
+            $description = "Insert Key name to create (can't be empty)";
             $confirmation = "Create Key?";
             $status1 = "Key creation cancelled";
           } else {
@@ -609,18 +614,21 @@ function Invoke-CursesUI {
             break;
           }
 
-          if ( $type -ceq "Key"){
+          if( ($type -ceq "Key") -or ($type -ceq "Key(Volatile)")) {
             if ( $newName -ceq '' ) { break; }
             # FIXME: if already exist, change status and break, but no error
             try {
-              ($currentKey.CreateSubKey($newName)).Close();
+              if( $type -ceq "Key(Volatile)" ) {
+                ($currentKey.CreateSubKey($newName, $true, "Volatile")).Close();
+              } else {
+                ($currentKey.CreateSubKey($newName)).Close();
+              }
               $rows   = Get-RegistryRows -Key $currentKey;
               $status = "Created key '$newName'";
             } catch {
               $status = "Failed to create key '$newName': $_".Trim();
             }
-          }
-          if ($type -match '^Value\((.+)\)$') {
+          } elseif ($type -match '^Value\((.+)\)$') {
             $type=$Matches[1];
             try {
               $status = Edit-RegistryValue -OldBuf $old -NewBuf $new -Key $currentKey -ValueName $newName -Kind $type;
@@ -635,17 +643,18 @@ function Invoke-CursesUI {
         }
 
         "D8"     { if( $key.Modifiers -cne "Alt" ) { break ;} $_ = "F8"; }
-        "Delete" { if( $key.Modifiers -cne "Alt" ) { break ;} $_ = "F8"; }
+        "Delete" { if( $key.Modifiers -ne 0 ) { break; } $_ = "F8"; }
         "F8" {
           if ($rows.Count -eq 0) { break; }
           if (-not $Writable) { $status = "Key deletion not supported in read-only mode"; break; }
           $item = $rows[$selected];
-          $resp = Show-ChooseDialog -OldBuf $old -NewBuf $new -Message "Do you want to remove '$($item.Name)'?"
-          if( ! ($resp -ceq "Yes") )  { break;}
           if ($item.Type -ceq 'Up') {
             $status = "Unable to remove parent key";
             break;
-          } elseif ($item.Type -ceq 'Value') {
+          }
+          $resp = Show-ChooseDialog -OldBuf $old -NewBuf $new -Message "Do you want to remove '$($item.Name)'?"
+          if( ! ($resp -ceq "Yes") )  { break;}
+          if ($item.Type -ceq 'Value') {
             $fullPath = "${hiveName}:\$path";
             try {
               $currentKey.DeleteValue($item.Name, $false);
