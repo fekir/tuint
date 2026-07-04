@@ -1,3 +1,11 @@
+# FIXME: some services can't be disabled -> use registry trick, for example windows defender services
+#To disable services that cannot be modified through services.msc, you can use the registry editor. Navigate to Computer\HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Services, find the service you want to disable, and set the Start REG_DWORD to 4 to disable it. 4 = Disabled 3 = Manual 2 = Automatic
+# https://learn.microsoft.com/en-us/answers/questions/5650280/how-to-disable-microsoft-defender-services
+# https://www.dedoimedo.com/computers/windows-8-1-defender.html
+# https://www.dedoimedo.com/computers/windows-services-registry.html
+# https://stackoverflow.com/questions/75173850/disabling-service-in-registry-still-does-not-prevent-starting-it
+# https://superuser.com/questions/947873/disable-windows-defender-in-windows-10
+
 Import-Module Microsoft.PowerShell.Management
 
 class ScreenBuffer {
