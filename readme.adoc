@@ -1,35 +1,51 @@
 = tuint
 
-tuint is a collection of small _TUI_ applications for Windows _NT_ (scripts currently).
+tuint is a collection of small _TUI_ applications for Windows _NT_.
 
-They add some "missing component" when one wants to use windows interactively in a terminal-only environment.
+They add some "missing components" when one wants to use windows interactively in a terminal-only environment.
 
-Ideally just download the programs and start them, no external dependencies are required.
-They are designed to be used over SSH or in headless environments like windows nano core
+This repository provides the liste programs in two formats: PowerShell scripts, and source files to be compiled.
 
-Those programs should work on "minimal-footprint headless" versions of Windows, like Windows Nano Server.
+Ideally you should be able to just download the PowerShell scripts and that it.
+On some environments, execution of scripts might be disallowed, in that case using an executable might be preferable.
 
+
+The native implementation also has another advantage: it is _much_ faster.
+On my machine, `taskschd-tui.ps1` requires multiple seconds before it draws something on screen, while `taskschd-tui.exe` is immediate.
+And both version are much faster than `taskschd.mc`, although the do not provide all the features that `taskschd.mc` has.
+
+On the other hand, if a feature is missing or if there is a bug, changing the program might be more difficult than editing a PowerShell script.
+
+Both the PowerShell scripts and native implementations should support the same use-cases, although it could be that one variant support slightly different features than the other.
+
+The programs (both variations) are designed to be used over SSH or in headless environments like windows nano core.
+
+Those programs should work on "minimal-footprint headless" versions of Windows, like Windows Nano Server, and from UNIX-like shells, like the one provided by mingw, cygwin and git-bash.
+
+Another advantage is that they use the background color of the terminal, no more white blinding screens!
+
+Other advantages:
+
+ * speed. In particular `taskschd-tui` is much faster to load than `taskschd.mc`
+ * TUI programs use the background color of the terminal, no more white blinding screens!
+ * they are not affected by UAC rules; in some constellation, `regedit.exe` is always executed as administrator and asks for confirmation/password. `regedit-tui` is just like any other program, no special handling.
 
 == List of TUI program
 
 === Registry Viewer/Editor (`regedit.exe`)
 
-Navigate the registry, add/remove keys, add/remove/edit values
+Use `regedit-tui` to navigate the registry, add/remove keys, add/remove/edit values
 
 === Task Scheduler (`taskschd.msc`)
 
-Enable/disable tasks
+Use `taskschd-tui` to enable and disable tasks
 
 === Services (`services.msc`)
 
-Enable/disable/start/stop services
-
-=== Windows Firewall (`wf.mfc`)
-
-Enable/disable rules
+Use `services-tui` to enable/disable/start/stop services
 
 == Programs that will not be added
 
 There are already many TUI programs for Windows, this repository is a collection of programs I could not find elsewhere.
 
-Thus if there is already a "native" (non-WSL, non-cygwin, ...) and well-supported TUI program for Windows, then there is no reason to provide here an inferior alternative here, like a file manager or a text editor.
+Thus if there is already a "native" (non-WSL, non-cygwin, ...) and well-supported TUI program for Windows, then there is no reason to provide here an alternative here, like a file manager or a text editor.
