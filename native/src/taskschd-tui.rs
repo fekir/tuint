@@ -484,12 +484,12 @@ fn run_tui() -> Result<()> {
     list.reload()?;
     let mut needs_redraw = true;
 
-    let mut old = common::ui::ScreenBuffer::new(0, 0);
-    let mut new = common::ui::ScreenBuffer::new(0, 0);
-    common::ui::resize_buffers(&mut old, &mut new, 0, 0)?;
     let (mut last_width, mut last_height) =
         crossterm::terminal::size().map(|(w, h)| (w as usize, h as usize))?;
 
+    let mut old = common::ui::ScreenBuffer::new();
+    let mut new = common::ui::ScreenBuffer::new();
+    common::ui::resize_buffers(&mut old, &mut new, last_width, last_height)?;
     let mut statusbar = String::new();
     let headerbar = "Task Scheduler TUI";
 

@@ -5,11 +5,11 @@ pub struct ScreenBuffer {
 }
 
 impl ScreenBuffer {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            width,
-            height,
-            cells: vec![b' '; width * height],
+            width: 0,
+            height: 0,
+            cells: vec![],
         }
     }
 
