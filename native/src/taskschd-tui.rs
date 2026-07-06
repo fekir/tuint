@@ -458,7 +458,6 @@ fn main() -> Result<()> {
 
     crossterm::execute!(
         std::io::stdout(),
-        Clear(ClearType::All),
         crossterm::cursor::Hide,
         crossterm::terminal::EnterAlternateScreen,
         crossterm::event::EnableMouseCapture
