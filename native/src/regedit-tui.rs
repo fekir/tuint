@@ -689,19 +689,29 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                                 continue;
                             }
                             _ => {
-                                let name = item.name.clone();
-
-                                if let Err(err) =
-                                    common::regedit::delete_key_or_value(current_hkey, &item.name)
-                                {
-                                    write!(&mut statusbar, "Failed to delete {} - {}", name, err)?;
+                                if let Ok(Some(0)) = common::ui::choose_dialog(
+                                    &mut old,
+                                    &mut new,
+                                    "Do you want to delete",
+                                    &["Yes", "No"],
+                                ) {
+                                    if let Err(err) = common::regedit::delete_key_or_value(
+                                        current_hkey,
+                                        &item.name,
+                                    ) {
+                                        write!(
+                                            &mut statusbar,
+                                            "Failed to delete {} - {}",
+                                            item.name, err
+                                        )?;
+                                    }
+                                    let selected = list.selected;
+                                    list.loadkey(current_hkey, &mut statusbar, false);
+                                    list.selected =
+                                        selected.min(list.tasks.len().saturating_sub(1));
                                 }
                             }
                         }
-
-                        let selected = list.selected;
-                        list.loadkey(current_hkey, &mut statusbar, false);
-                        list.selected = selected.min(list.tasks.len().saturating_sub(1));
                     }
 
                     (KeyCode::Char('f'), KeyModifiers::NONE)
