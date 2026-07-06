@@ -484,7 +484,7 @@ fn run_tui() -> Result<()> {
 
     let mut old = common::ui::ScreenBuffer::new(0, 0);
     let mut new = common::ui::ScreenBuffer::new(0, 0);
-    common::ui::init_buffers(&mut old, &mut new, 0, 0)?;
+    common::ui::resize_buffers(&mut old, &mut new, 0, 0)?;
     let (mut last_width, mut last_height) =
         crossterm::terminal::size().map(|(w, h)| (w as usize, h as usize))?;
 
@@ -593,7 +593,7 @@ fn run_tui() -> Result<()> {
 
             Event::Resize(width, height) => {
                 if new.width != width.into() || new.height != height.into() {
-                    common::ui::init_buffers(&mut old, &mut new, width.into(), height.into())?;
+                    common::ui::resize_buffers(&mut old, &mut new, width.into(), height.into())?;
                     needs_redraw = true;
                 }
             }

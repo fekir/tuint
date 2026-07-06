@@ -1,22 +1,15 @@
 pub struct ScreenBuffer {
     pub width: usize,
     pub height: usize,
-    cells: Vec<Vec<char>>,
+    cells: Vec<u8>, // row-major: y * width + x
 }
 
 impl ScreenBuffer {
     pub fn new(width: usize, height: usize) -> Self {
-        let blank = vec![' '; width];
-        let mut cells = Vec::with_capacity(height);
-
-        for _ in 0..height {
-            cells.push(blank.clone());
-        }
-
         Self {
             width,
             height,
-            cells,
+            cells: vec![b' '; width * height],
         }
     }
 
@@ -24,35 +17,45 @@ impl ScreenBuffer {
         if y >= self.height {
             return;
         }
-
-        let mut chars: Vec<char> = text.chars().collect();
-        chars.resize(self.width, ' ');
-        self.cells[y] = chars;
+        let start = y * self.width;
+        let row = &mut self.cells[start..start + self.width];
+        row.fill(b' ');
+        let bytes = text.as_bytes();
+        let n = bytes.len().min(self.width);
+        row[..n].copy_from_slice(&bytes[..n]);
     }
-    pub fn row(&self, y: usize) -> &[char] {
-        &self.cells[y]
+
+    pub fn row(&self, y: usize) -> &[u8] {
+        let start = y * self.width;
+        &self.cells[start..start + self.width]
     }
 
-    pub fn row_mut(&mut self, y: usize) -> &mut [char] {
-        &mut self.cells[y]
+    pub fn row_mut(&mut self, y: usize) -> &mut [u8] {
+        let start = y * self.width;
+        &mut self.cells[start..start + self.width]
     }
 }
 
-pub fn init_buffers(
+pub fn resize_buffers(
     old: &mut ScreenBuffer,
     new: &mut ScreenBuffer,
     width: usize,
     height: usize,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    *old = ScreenBuffer::new(width, height);
-    *new = ScreenBuffer::new(width, height);
+    old.width = width;
+    old.height = height;
+    old.cells.resize(width * height, b' ');
+    old.cells.fill(b' ');
 
-    let mut stdout = std::io::stdout();
-    crossterm::QueueableCommand::queue(
-        &mut stdout,
+    new.width = width;
+    new.height = height;
+    new.cells.resize(width * height, b' ');
+    new.cells.fill(b' ');
+
+    crossterm::execute!(
+        std::io::stdout(),
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
     )?;
-    std::io::Write::flush(&mut stdout)?;
     Ok(())
 }
 
@@ -90,11 +93,7 @@ pub fn print_diff(
 
             //  write entire region in one call
             let slice = &row_new[start..start + length];
-            let mut buf = String::with_capacity(length);
-            for ch in slice {
-                buf.push(*ch);
-            }
-            std::io::Write::write_all(&mut stdout, buf.as_bytes())?;
+            std::io::Write::write_all(&mut stdout, slice)?;
 
             row_old[start..start + length].copy_from_slice(slice);
         }
@@ -195,7 +194,7 @@ pub fn choose_dialog(
             }
             crossterm::event::Event::Resize(width, height) => {
                 if new.width != width.into() || new.height != height.into() {
-                    init_buffers(old, new, width.into(), height.into())?;
+                    resize_buffers(old, new, width.into(), height.into())?;
                     needs_redraw = true;
                 }
             }
@@ -209,7 +208,7 @@ pub fn info_dialog(
     new: &mut ScreenBuffer,
     message: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    init_buffers(old, new, old.width, new.height)?;
+    resize_buffers(old, new, old.width, new.height)?;
 
     let mut needs_redraw = true;
 
@@ -240,7 +239,7 @@ pub fn info_dialog(
 
             crossterm::event::Event::Resize(width, height) => {
                 if new.width != width.into() || new.height != height.into() {
-                    init_buffers(old, new, width.into(), height.into())?;
+                    resize_buffers(old, new, width.into(), height.into())?;
                     needs_redraw = true;
                 }
             }
@@ -336,7 +335,7 @@ pub fn inline_editor(
 
             Event::Resize(width, height) => {
                 if new.width != width.into() || new.height != height.into() {
-                    init_buffers(old, new, width.into(), height.into())?;
+                    resize_buffers(old, new, width.into(), height.into())?;
                     needs_redraw = true;
                 }
             }
