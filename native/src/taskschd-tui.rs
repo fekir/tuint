@@ -528,14 +528,20 @@ fn run_tui() -> Result<()> {
                     }
                     (KeyCode::F(5), KeyModifiers::NONE)
                     | (KeyCode::Char('r'), KeyModifiers::NONE)
-                    | (KeyCode::Char('r'), KeyModifiers::CONTROL) => match list.reload() {
-                        Ok(v) => {
-                            write!(&mut statusbar, "Loaded {} tasks", v)?;
+                    | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                        // first move goto to function
+                        let width = new.width;
+                        let height = new.height;
+                        common::ui::resize_buffers(&mut old, &mut new, width, height)?;
+                        match list.reload() {
+                            Ok(v) => {
+                                write!(&mut statusbar, "Loaded {} tasks", v)?;
+                            }
+                            Err(e) => {
+                                write!(&mut statusbar, "Error loading task: {}", e)?;
+                            }
                         }
-                        Err(e) => {
-                            write!(&mut statusbar, "Error loading task: {}", e)?;
-                        }
-                    },
+                    }
 
                     (KeyCode::Down, KeyModifiers::NONE) => {
                         list.selected = (list.selected + 1).min(list.tasks.len().saturating_sub(1));

@@ -362,6 +362,9 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     | (KeyCode::Char('r'), KeyModifiers::NONE)
                     | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                         // first move goto to function
+                        let width = new.width;
+                        let height = new.height;
+                        common::ui::resize_buffers(&mut old, &mut new, width, height)?;
                         list.loadkey(current_hkey, &mut statusbar, false);
                         write!(&mut statusbar, "reloaded")?;
                     }
