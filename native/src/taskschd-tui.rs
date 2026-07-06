@@ -436,38 +436,24 @@ fn show_task_details(
     let _ = info_dialog(old, new, &message);
 }
 
-fn main() {
+fn main() -> Result<()> {
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--help" | "-h" | "?" | "/?" => {
                 println!("{}", HELP_TEXT);
-                return;
+                return Ok(());
             }
             other => {
-                eprintln!("Unrecognized command-line parameter: {}", other);
-                std::process::exit(1);
+                return Err(format!("Unrecognized command-line parameter: {}", other).into());
             }
         }
     }
 
-    unsafe {
-        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        if hr.is_err() {
-            println!("CoInitializeEx failed: {hr}");
-            std::process::exit(1);
-        }
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        return Err("Unable to initialize COM interface".into());
     }
 
-    run_tui().unwrap();
-
-    crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).ok();
-
-    unsafe {
-        CoUninitialize();
-    }
-}
-
-fn run_tui() -> Result<()> {
     enable_raw_mode()?;
 
     crossterm::execute!(
@@ -478,6 +464,22 @@ fn run_tui() -> Result<()> {
         crossterm::event::EnableMouseCapture
     )?;
 
+    let res = run_tui();
+
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableMouseCapture,
+        crossterm::terminal::LeaveAlternateScreen,
+        Clear(ClearType::All),
+    )?;
+    disable_raw_mode()?;
+    unsafe {
+        CoUninitialize();
+    }
+    return res;
+}
+
+fn run_tui() -> Result<()> {
     let mut list = List::new();
     list.reload()?;
     let mut needs_redraw = true;
@@ -529,10 +531,10 @@ fn run_tui() -> Result<()> {
                     | (KeyCode::Char('r'), KeyModifiers::NONE)
                     | (KeyCode::Char('r'), KeyModifiers::CONTROL) => match list.reload() {
                         Ok(v) => {
-                            write!(&mut statusbar, "Loaded {} tasks", v).unwrap();
+                            write!(&mut statusbar, "Loaded {} tasks", v)?;
                         }
                         Err(e) => {
-                            write!(&mut statusbar, "Error loading task: {}", e).unwrap();
+                            write!(&mut statusbar, "Error loading task: {}", e)?;
                         }
                     },
 
@@ -558,9 +560,9 @@ fn run_tui() -> Result<()> {
                     }
                     (KeyCode::Char(' '), KeyModifiers::NONE) => {
                         if let Err(e) = list.toggle() {
-                            write!(&mut statusbar, "Error while changing status: {}", e).unwrap();
+                            write!(&mut statusbar, "Error while changing status: {}", e)?;
                         } else {
-                            write!(&mut statusbar, "Task status changed").unwrap();
+                            write!(&mut statusbar, "Task status changed")?;
                         }
                     }
 
@@ -615,20 +617,9 @@ fn run_tui() -> Result<()> {
                 _ => {}
             },
 
-            _other => {
-                // for example keyup
-                //counter3 += 1;
-                //list.status = format!("event2 {:?}", other);
-            }
+            _other => {}
         }
     }
-
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableMouseCapture,
-        crossterm::terminal::LeaveAlternateScreen
-    )?;
-    disable_raw_mode()?;
 
     Ok(())
 }

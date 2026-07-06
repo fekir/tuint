@@ -247,7 +247,7 @@ fn parse_path(mut path: String) -> (Option<Hive>, String) {
     return (hive, path);
 }
 
-fn main() {
+fn main() -> Result<()> {
     let mut path = String::new();
     let mut hive = HKCU;
     let mut args = std::env::args().skip(1).peekable();
@@ -256,7 +256,7 @@ fn main() {
         match arg.as_str() {
             "--help" | "-h" | "?" | "/?" => {
                 println!("{}", HELP_TEXT);
-                return;
+                return Ok(());
             }
 
             "--path" => {
@@ -267,29 +267,18 @@ fn main() {
                         hive = new_hive;
                         path = new_path;
                     } else {
-                        eprintln!("Invalid registry hive in path: {}", value);
-                        std::process::exit(1);
+                        return Err(format!("Invalid registry hive in path: {}", value).into());
                     }
                 } else {
-                    eprintln!("Missing value for --path");
-                    std::process::exit(1);
+                    return Err("Missing value for --path".into());
                 }
             }
-
             other => {
-                eprintln!("Unrecognized command-line parameter: {}", other);
-                std::process::exit(1);
+                return Err(format!("Unrecognized command-line parameter: {}", other).into());
             }
         }
     }
 
-    // parse hive from path
-    run_tui(hive, path).unwrap();
-
-    crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).ok();
-}
-
-fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
     enable_raw_mode()?;
 
     crossterm::execute!(
@@ -300,6 +289,20 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
         crossterm::event::EnableMouseCapture
     )?;
 
+    let res = run_tui(hive, path);
+
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableMouseCapture,
+        crossterm::terminal::LeaveAlternateScreen,
+        Clear(ClearType::All),
+    )?;
+    disable_raw_mode()?;
+
+    return res;
+}
+
+fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
     // let key = open_registry_key(Hive::HKLM, None, false)?;
     //let key = open_registry_key(Hive::HKCU, Some("Control Panel"), false)?;
     let writable = true;
@@ -325,7 +328,6 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                 last_height = new.height;
             }
             headerbar.clear();
-            use std::fmt::Write;
             write!(&mut headerbar, "Regedit TUI\n {}:\\{}", hive.str, &path)?;
 
             list.visible_height = old.height.saturating_sub(3 + headerbar.lines().count()) as usize;
@@ -496,7 +498,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     (KeyCode::F(4), KeyModifiers::NONE)
                     | (KeyCode::Char('4'), KeyModifiers::ALT) => {
                         if !writable {
-                            write!(&mut statusbar, "not writable, operation disabled").unwrap();
+                            write!(&mut statusbar, "not writable, operation disabled")?;
                             continue;
                         }
                         let item = list.get();
@@ -527,7 +529,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     (KeyCode::F(6), KeyModifiers::NONE)
                     | (KeyCode::Char('6'), KeyModifiers::ALT) => {
                         if !writable {
-                            write!(&mut statusbar, "not writable, operation disabled").unwrap();
+                            write!(&mut statusbar, "not writable, operation disabled")?;
                             continue;
                         }
                         let item = list.get();
@@ -542,7 +544,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                                 ("value", common::regedit::rename_key as RenameFn)
                             }
                             RegOrStr::RegType2(Additionalreg::Up) => {
-                                write!(&mut statusbar, "Unable to rename current element").unwrap();
+                                write!(&mut statusbar, "Unable to rename current element")?;
                                 continue;
                             }
                         };
@@ -562,8 +564,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                             }
                         };
                         if let Err(err) = fun(current_hkey, &item.name, &new_name) {
-                            write!(&mut statusbar, "Failed to rename {key_or_value}: {err}")
-                                .unwrap();
+                            write!(&mut statusbar, "Failed to rename {key_or_value}: {err}")?;
                         } else {
                             let sel = list.selected;
                             list.loadkey(current_hkey, &mut statusbar, true);
@@ -574,7 +575,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     (KeyCode::F(7), KeyModifiers::NONE)
                     | (KeyCode::Char('7'), KeyModifiers::ALT) => {
                         if !writable {
-                            write!(&mut statusbar, "not writable, operation disabled").unwrap();
+                            write!(&mut statusbar, "not writable, operation disabled")?;
                             continue;
                         }
 
@@ -675,13 +676,13 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     (KeyCode::F(8), KeyModifiers::NONE)
                     | (KeyCode::Char('8'), KeyModifiers::ALT) => {
                         if !writable {
-                            write!(&mut statusbar, "not writable, operation disabled").unwrap();
+                            write!(&mut statusbar, "not writable, operation disabled")?;
                             continue;
                         }
                         let item = list.get();
                         match item.value_kind {
                             RegOrStr::RegType2(Additionalreg::Up) => {
-                                write!(&mut statusbar, "not writable, operation disabled").unwrap();
+                                write!(&mut statusbar, "not writable, operation disabled")?;
                                 continue;
                             }
                             _ => {
@@ -748,13 +749,6 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
             _other => {}
         }
     }
-
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableMouseCapture,
-        crossterm::terminal::LeaveAlternateScreen
-    )?;
-    disable_raw_mode()?;
 
     Ok(())
 }
@@ -852,22 +846,19 @@ fn get_all_registry_rows(hkey: HKEY, rows: &mut Vec<RegistryRow>) -> Result<()> 
             REG_DWORD => match data_buf.len() {
                 4 => data_buf[..data_buf.len() as usize]
                     .try_into()
-                    .map(|b: [u8; 4]| format!("0x{:08X}", u32::from_le_bytes(b)))
-                    .unwrap(),
+                    .map(|b: [u8; 4]| format!("0x{:08X}", u32::from_le_bytes(b)))?,
                 _ => format!("invalid dword: {} bytes", data_buf.len()),
             },
             REG_DWORD_BIG_ENDIAN => match data_buf.len() {
                 4 => data_buf[..data_buf.len() as usize]
                     .try_into()
-                    .map(|b: [u8; 4]| format!("0x{:08X}", u32::from_be_bytes(b)))
-                    .unwrap(),
+                    .map(|b: [u8; 4]| format!("0x{:08X}", u32::from_be_bytes(b)))?,
                 _ => format!("invalid big endian dword: {} bytes", data_buf.len()),
             },
             REG_QWORD => match data_buf.len() {
                 8 => data_buf[..data_buf.len() as usize]
                     .try_into()
-                    .map(|b: [u8; 8]| format!("0x{:016X}", u64::from_le_bytes(b)))
-                    .unwrap(),
+                    .map(|b: [u8; 8]| format!("0x{:016X}", u64::from_le_bytes(b)))?,
                 _ => format!("invalid qword: {} bytes", data_buf.len()),
             },
             REG_SZ | REG_EXPAND_SZ | REG_MULTI_SZ => {
@@ -954,7 +945,7 @@ fn edit_registry_value(
 
     let name_w: Vec<u16> = value_name.encode_utf16().chain(Some(0)).collect();
     if let Err(err) = common::regedit::set_registry_value(key, &name_w, value_kind, &new_value) {
-        write!(status, "{}", err).unwrap();
+        write!(status, "{}", err)?;
         return Ok(false);
     }
 

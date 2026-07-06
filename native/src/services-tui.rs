@@ -172,14 +172,11 @@ impl<'a> List<'a> {
 
         if let Some(task) = self.get() {
             let svc = unsafe {
-                Owned::new(
-                    OpenServiceW(
-                        *self.scm,
-                        windows::core::PCWSTR(task.internal_name.as_ptr()),
-                        SERVICE_ALL_ACCESS,
-                    )
-                    .unwrap(),
-                )
+                Owned::new(OpenServiceW(
+                    *self.scm,
+                    windows::core::PCWSTR(task.internal_name.as_ptr()),
+                    SERVICE_ALL_ACCESS,
+                )?)
             };
             if task.is_running {
                 let mut status: SERVICE_STATUS = Default::default();
@@ -240,26 +237,41 @@ impl<'a> List<'a> {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--help" | "-h" | "?" | "/?" => {
                 println!("{}", HELP_TEXT);
-                return;
+                return Ok(());
             }
             other => {
-                eprintln!("Unrecognized command-line parameter: {}", other);
-                std::process::exit(1);
+                return Err(format!("Unrecognized command-line parameter: {}", other).into());
             }
         }
     }
 
-    run_tui().unwrap();
+    let scm = unsafe {
+        windows::Win32::System::Services::OpenSCManagerW(
+            windows::core::PCWSTR::null(),
+            windows::core::PCWSTR::null(),
+            windows::Win32::System::Services::SC_MANAGER_ALL_ACCESS,
+        )
+    };
 
-    crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).ok();
-}
+    let scm = match scm {
+        Ok(h) => h,
+        Err(_) => unsafe {
+            print!("Unable to open Service Manager with all access rights, opening only with read rights");
+            windows::Win32::System::Services::OpenSCManagerW(
+                windows::core::PCWSTR::null(),
+                windows::core::PCWSTR::null(),
+                windows::Win32::System::Services::SC_MANAGER_ENUMERATE_SERVICE,
+            )?
+        },
+    };
 
-fn run_tui() -> Result<()> {
+    let scm = unsafe { Owned::new(scm) };
+
     enable_raw_mode()?;
 
     crossterm::execute!(
@@ -270,15 +282,21 @@ fn run_tui() -> Result<()> {
         crossterm::event::EnableMouseCapture
     )?;
 
-    let scm = unsafe {
-        Owned::new(windows::Win32::System::Services::OpenSCManagerW(
-            windows::core::PCWSTR::null(),
-            windows::core::PCWSTR::null(),
-            windows::Win32::System::Services::SC_MANAGER_ALL_ACCESS, //windows::Win32::System::Services::SC_MANAGER_ENUMERATE_SERVICE | windows::Win32::System::Services::SC_MANAGER_CONNECT,
-        )?)
-    };
+    let res = run_tui(*scm);
 
-    let mut list = List::new(&*scm);
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableMouseCapture,
+        crossterm::terminal::LeaveAlternateScreen,
+        Clear(ClearType::All),
+    )?;
+    disable_raw_mode()?;
+
+    return res;
+}
+
+fn run_tui(scm: SC_HANDLE) -> Result<()> {
+    let mut list = List::new(&scm);
     list.reload()?;
     let mut needs_redraw = true;
 
@@ -289,7 +307,7 @@ fn run_tui() -> Result<()> {
         crossterm::terminal::size().map(|(w, h)| (w as usize, h as usize))?;
 
     let mut statusbar = String::new();
-    let headerbar = "Task Scheduler TUI";
+    let headerbar = "Services TUI";
 
     loop {
         if needs_redraw {
@@ -329,10 +347,10 @@ fn run_tui() -> Result<()> {
                     | (KeyCode::Char('r'), KeyModifiers::NONE)
                     | (KeyCode::Char('r'), KeyModifiers::CONTROL) => match list.reload() {
                         Ok(v) => {
-                            write!(&mut statusbar, "Loaded {} services", v).unwrap();
+                            write!(&mut statusbar, "Loaded {} services", v)?;
                         }
                         Err(e) => {
-                            write!(&mut statusbar, "Error loading task: {}", e).unwrap();
+                            write!(&mut statusbar, "Error loading task: {}", e)?;
                         }
                     },
 
@@ -359,14 +377,14 @@ fn run_tui() -> Result<()> {
                     }
                     (KeyCode::Char(' '), KeyModifiers::NONE) => {
                         // write status bar before, since startin/stopping service can take some time...
-                        write!(&mut statusbar, "Updating status...").unwrap();
+                        write!(&mut statusbar, "Updating status...")?;
                         draw_ui(&mut new, &list, &statusbar, &headerbar);
                         common::ui::print_diff(&mut old, &mut new)?;
                         statusbar.clear();
                         if let Err(e) = list.toggle() {
-                            write!(&mut statusbar, "Error while changing status: {}", e).unwrap();
+                            write!(&mut statusbar, "Error while changing status: {}", e)?;
                         } else {
-                            write!(&mut statusbar, "Task status changed").unwrap();
+                            write!(&mut statusbar, "Service status changed")?;
                         }
                     }
                     (KeyCode::Char('f'), KeyModifiers::NONE)
@@ -414,20 +432,9 @@ fn run_tui() -> Result<()> {
                 _ => {}
             },
 
-            _other => {
-                // for example keyup
-                //counter3 += 1;
-                //list.status = format!("event2 {:?}", other);
-            }
+            _other => {}
         }
     }
-
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableMouseCapture,
-        crossterm::terminal::LeaveAlternateScreen
-    )?;
-    disable_raw_mode()?;
 
     Ok(())
 }
