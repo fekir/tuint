@@ -183,10 +183,9 @@ pub fn choose_dialog(
                     crossterm::event::KeyCode::Enter => {
                         return Ok(Some(sel));
                     }
-                    crossterm::event::KeyCode::Esc => {
-                        return Ok(None);
-                    }
-                    crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
+                    crossterm::event::KeyCode::Esc
+                    | crossterm::event::KeyCode::F(10)
+                    | crossterm::event::KeyCode::Char('q') => {
                         return Ok(None);
                     }
                     _ => {}
@@ -229,8 +228,8 @@ pub fn info_dialog(
             {
                 match key.code {
                     crossterm::event::KeyCode::Esc
-                    | crossterm::event::KeyCode::Char('q')
-                    | crossterm::event::KeyCode::Char('Q') => {
+                    | crossterm::event::KeyCode::F(10)
+                    | crossterm::event::KeyCode::Char('q') => {
                         return Ok(());
                     }
                     _ => {}
@@ -256,8 +255,6 @@ pub fn inline_editor(
     prompt: &str,
     input: &str,
 ) -> std::result::Result<Option<String>, Box<dyn std::error::Error>> {
-    use crossterm::event::{read, Event, KeyCode};
-
     let mut stdout = std::io::stdout();
 
     let mut input: Vec<char> = input.chars().collect();
@@ -295,36 +292,40 @@ pub fn inline_editor(
             crossterm::QueueableCommand::queue(&mut stdout, crossterm::cursor::Hide)?;
             needs_redraw = false;
         }
-        match read()? {
-            Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
+        match crossterm::event::read()? {
+            crossterm::event::Event::Key(key)
+                if key.kind == crossterm::event::KeyEventKind::Press =>
+            {
                 needs_redraw = true;
                 match key.code {
-                    KeyCode::Enter => {
+                    crossterm::event::KeyCode::Enter => {
                         return Ok(Some(input.iter().collect()));
                     }
-                    KeyCode::Esc => {
+                    crossterm::event::KeyCode::Esc
+                    | crossterm::event::KeyCode::F(10)
+                    | crossterm::event::KeyCode::Char('q') => {
                         return Ok(None);
                     }
-                    KeyCode::Left => {
+                    crossterm::event::KeyCode::Left => {
                         cursor = cursor.saturating_sub(1);
                     }
-                    KeyCode::Right => {
+                    crossterm::event::KeyCode::Right => {
                         cursor = (cursor + 1).min(input.len());
                     }
-                    KeyCode::Home => cursor = 0,
-                    KeyCode::End => cursor = input.len(),
-                    KeyCode::Backspace => {
+                    crossterm::event::KeyCode::Home => cursor = 0,
+                    crossterm::event::KeyCode::End => cursor = input.len(),
+                    crossterm::event::KeyCode::Backspace => {
                         if cursor > 0 {
                             cursor -= 1;
                             input.remove(cursor);
                         }
                     }
-                    KeyCode::Delete => {
+                    crossterm::event::KeyCode::Delete => {
                         if cursor < input.len() {
                             input.remove(cursor);
                         }
                     }
-                    KeyCode::Char(c) => {
+                    crossterm::event::KeyCode::Char(c) => {
                         input.insert(cursor, c);
                         cursor += 1;
                     }
@@ -333,7 +334,7 @@ pub fn inline_editor(
                 }
             }
 
-            Event::Resize(width, height) => {
+            crossterm::event::Event::Resize(width, height) => {
                 if new.width != width.into() || new.height != height.into() {
                     resize_buffers(old, new, width.into(), height.into())?;
                     needs_redraw = true;
