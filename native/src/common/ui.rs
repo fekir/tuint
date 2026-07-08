@@ -80,18 +80,20 @@ pub fn print_diff(
                 x += 1;
             }
 
-            let start = x;
-            while x < new.width && row_old[x] != row_new[x] {
-                x += 1;
-            }
-            let length = x - start;
+            // might break multibyte character
+            //let start = x;
+            //while x < new.width && row_old[x] != row_new[x] {
+            //    x += 1;
+            //}
+            //let length = x - start;
+            let start = 0;
+            let length = new.width;
 
             crossterm::QueueableCommand::queue(
                 &mut stdout,
                 crossterm::cursor::MoveTo(start as u16, y as u16),
             )?;
 
-            //  write entire region in one call
             let slice = &row_new[start..start + length];
             std::io::Write::write_all(&mut stdout, slice)?;
 
