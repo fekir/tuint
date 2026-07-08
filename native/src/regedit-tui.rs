@@ -676,6 +676,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                     }
 
                     (KeyCode::F(8), KeyModifiers::NONE)
+                    | (crossterm::event::KeyCode::Delete, KeyModifiers::NONE)
                     | (KeyCode::Char('8'), KeyModifiers::ALT) => {
                         if !writable {
                             write!(&mut statusbar, "not writable, operation disabled")?;

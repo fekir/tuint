@@ -48,7 +48,7 @@ struct Service {
     name: String,
     internal_name: Vec<u16>, // PCWSTR
     startup_type: SERVICE_START_TYPE,
-    is_running: bool,
+    status: windows::Win32::System::Services::SERVICE_STATUS_CURRENT_STATE,
 }
 
 struct List<'a> {
@@ -109,7 +109,13 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
             marker = if index == list.selected { '>' } else { ' ' },
             name = common::ui::trim(&r.name, max_name),
             name_width = max_name,
-            state = if r.is_running { "Running" } else { "" },
+            state = if r.status == windows::Win32::System::Services::SERVICE_RUNNING {
+                "Running"
+            } else if r.status == windows::Win32::System::Services::SERVICE_PAUSED {
+                "Paused"
+            } else {
+                ""
+            },
             startup = match r.startup_type {
                 SERVICE_BOOT_START => "Boot",
                 SERVICE_SYSTEM_START => "System",
@@ -170,11 +176,16 @@ impl<'a> List<'a> {
                     SERVICE_ALL_ACCESS,
                 )?)
             };
-            if task.is_running {
+            if task.status == windows::Win32::System::Services::SERVICE_RUNNING {
                 let mut status: SERVICE_STATUS = Default::default();
                 unsafe { ControlService(*svc, SERVICE_CONTROL_STOP, &mut status)? };
-            } else {
+            } else if task.status == windows::Win32::System::Services::SERVICE_STOPPED {
                 unsafe { StartServiceW(*svc, None)? }
+            } else if task.status == windows::Win32::System::Services::SERVICE_PAUSED {
+                let mut status: SERVICE_STATUS = Default::default();
+                unsafe {
+                    ControlService(*svc, SERVICE_CONTROL_CONTINUE, &mut status)?;
+                }
             }
 
             let mut attempts = 0;
@@ -194,8 +205,8 @@ impl<'a> List<'a> {
                     &*(buffer.as_ptr() as *const SERVICE_STATUS_PROCESS)
                 };
 
-                if (task.is_running && status.dwCurrentState == SERVICE_STOPPED)
-                    || (!task.is_running && status.dwCurrentState == SERVICE_RUNNING)
+                if (task.status == SERVICE_RUNNING && status.dwCurrentState == SERVICE_STOPPED)
+                    || (task.status != SERVICE_RUNNING && status.dwCurrentState == SERVICE_RUNNING)
                 {
                     break;
                 }
@@ -384,6 +395,25 @@ fn run_tui(scm: SC_HANDLE) -> Result<()> {
                             write!(&mut statusbar, "Service status changed")?;
                         }
                     }
+                    (KeyCode::Char('m'), KeyModifiers::NONE) => {
+                        let scm = *list.scm;
+                        if let Some(task) = list.get() {
+                            match modify_service(&mut old, &mut new, task, &scm) {
+                                Err(e) => {
+                                    write!(&mut statusbar, "Error modifying service: {}", e)?;
+                                }
+                                Ok(_) => {}
+                            }
+                            match list.reload() {
+                                Ok(v) => {
+                                    write!(&mut statusbar, "Loaded {} services", v)?;
+                                }
+                                Err(e) => {
+                                    write!(&mut statusbar, "Error loading services: {}", e)?;
+                                }
+                            }
+                        };
+                    }
                     (KeyCode::Char('f'), KeyModifiers::NONE)
                     | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
                         if let Some(filter) = common::ui::inline_editor(
@@ -530,12 +560,138 @@ fn list_all_services(
 
             services.push(Service {
                 name: display,
-                is_running: status == SERVICE_RUNNING,
+                status,
                 internal_name: clone_pwstring(name),
                 startup_type: startype,
             });
         }
     }
     services.sort_by_cached_key(|t| t.name.to_ascii_lowercase());
+    Ok(())
+}
+
+// NOTE: no all services can be paused, should query and update dialog
+fn modify_service(
+    old: &mut common::ui::ScreenBuffer,
+    new: &mut common::ui::ScreenBuffer,
+    task: &Service,
+    scm: &SC_HANDLE,
+) -> Result<()> {
+    use windows::Win32::System::Services::*;
+
+    let svc = unsafe {
+        Owned::new(OpenServiceW(
+            *scm,
+            windows::core::PCWSTR(task.internal_name.as_ptr()),
+            SERVICE_ALL_ACCESS,
+        )?)
+    };
+    let svc = *svc;
+
+    match common::ui::choose_dialog(
+        old,
+        new,
+        "Set start type to ",
+        &[
+            "Auto",
+            "On Demand",
+            // "Boot", "System",
+            "Disabled",
+        ],
+    ) {
+        Ok(Some(v)) => {
+            let flag = match v {
+                0 => SERVICE_AUTO_START,
+                1 => SERVICE_DEMAND_START,
+                //2 => SERVICE_BOOT_START,   // error: incorrect
+                //3 => SERVICE_SYSTEM_START, // error: incorrect
+                _ => SERVICE_DISABLED,
+            };
+            unsafe {
+                ChangeServiceConfigW(
+                    svc,
+                    ENUM_SERVICE_TYPE(SERVICE_NO_CHANGE),
+                    flag,
+                    SERVICE_ERROR(SERVICE_NO_CHANGE),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )?;
+            }
+        }
+        _ => {}
+    }
+
+    let res = common::ui::choose_dialog(
+        old,
+        new,
+        "Change service status:",
+        &["Start/Resume", "Stop", "Pause"],
+    );
+
+    let res = match res {
+        Ok(Some(v)) => v,
+        Ok(None) => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+
+    match res {
+        0 => {
+            if task.status == SERVICE_PAUSED {
+                let mut status: SERVICE_STATUS = Default::default();
+                unsafe {
+                    ControlService(svc, SERVICE_CONTROL_CONTINUE, &mut status)?;
+                }
+            } else {
+                unsafe { StartServiceW(svc, None)? };
+            }
+            // or
+        }
+        v @ (1 | 2) => {
+            let flag = if v == 1 {
+                SERVICE_CONTROL_STOP
+            } else {
+                SERVICE_CONTROL_PAUSE
+            };
+            let mut status: SERVICE_STATUS = Default::default();
+            unsafe { ControlService(svc, flag, &mut status)? };
+
+            let mut attempts = 0;
+            let max_attempts = 2 * 500 * 5; // 5 seconds
+
+            loop {
+                let mut buffer = vec![0u8; std::mem::size_of::<SERVICE_STATUS_PROCESS>()];
+                let mut bytes_needed = 0;
+
+                let status = unsafe {
+                    QueryServiceStatusEx(
+                        svc,
+                        SC_STATUS_PROCESS_INFO,
+                        Some(&mut buffer),
+                        &mut bytes_needed,
+                    )?;
+                    &*(buffer.as_ptr() as *const SERVICE_STATUS_PROCESS)
+                };
+
+                if (v == 1 && status.dwCurrentState == SERVICE_STOPPED)
+                    || (v == 2 && status.dwCurrentState == SERVICE_RUNNING)
+                {
+                    break;
+                }
+
+                attempts += 1;
+                if attempts >= max_attempts {
+                    // timeout reached
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+        _ => {}
+    };
     Ok(())
 }
