@@ -44,6 +44,10 @@ Use `taskschd-tui` to enable and disable tasks
 
 Use `services-tui` to enable/disable/start/stop services
 
+=== Windows Firewall (`wf.msc`)
+
+Use `wf-tui` to enable, disable and delete rules
+
 == Programs that will not be added
 
 There are already many TUI programs for Windows, this repository is a collection of programs I could not find elsewhere.

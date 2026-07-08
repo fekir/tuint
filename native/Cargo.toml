@@ -15,24 +15,32 @@ path = "src/regedit-tui.rs"
 name = "services-tui"
 path = "src/services-tui.rs"
 
+[[bin]]
+name = "wf-tui"
+path = "src/wf-tui.rs"
+
 [dependencies]
 crossterm = "0.29"
 
 windows = { version = "0.62.2", features = [
-    # taskschd-tui
-    "Win32_System_Com",
-    "Win32_System_TaskScheduler",
-    "Win32_Foundation",
-    "Win32_System_Ole",
-    "Win32_System_Variant",
-    "Win32_System_Diagnostics",
-    "Win32_System_Diagnostics_Debug",
-    "Win32_System_SystemServices",
+  # taskschd-tui
+  "Win32_System_Com",
+  "Win32_System_TaskScheduler",
+  "Win32_Foundation",
+  "Win32_System_Ole",
+  "Win32_System_Variant",
+  "Win32_System_Diagnostics",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_SystemServices",
 
-    # regedit-tui
-    "Win32_System_Registry",
-    "Win32_Security",
+  # regedit-tui
+  "Win32_System_Registry",
+  "Win32_Security",
 
-    # services-tui
-    "Win32_System_Services"
+  # services-tui
+  "Win32_System_Services",
+
+  # firewall-tui
+  "Win32_NetworkManagement",
+  "Win32_NetworkManagement_WindowsFirewall",
 ] }
