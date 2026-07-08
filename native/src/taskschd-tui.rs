@@ -40,10 +40,10 @@ TUI options
 
 Arrow Keys                - move up and down
 Home/End                  - go to start/end of list
-Alt-0 / Ctrl+C / F10 / Q  - close program
-Alt-1 / F1 / ? / H        - show this dialog
-Alt-5 / Ctrl+R / F5 / R   - refresh and redraw TUI
-Ctrl+F / F                - filter tasks
+Q / F10 / Alt-0 / Ctrl+C  - close program
+H / ? / F1 / Alt-1        - show this dialog
+R / F5 / Ctrl+R / Alt-5   - refresh and redraw TUI
+F / Ctrl+F                - filter tasks
 I                         - show additional information about the selected task
 Space                     - enable/disable scheduled task";
 
