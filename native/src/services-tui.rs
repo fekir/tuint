@@ -37,18 +37,11 @@ Alt-5 / Ctrl+R / F5 / R   - refresh and redraw TUI
 Ctrl+F / F                - filter services
 Space                     - start/stop service";
 
-fn clone_pwstring(ptr: windows::core::PWSTR) -> Vec<u16> {
-    if ptr.0.is_null() {
+fn clone_pwstring(pwstr: windows::core::PWSTR) -> Vec<u16> {
+    if pwstr.is_null() {
         return vec![0];
     }
-    let mut len = 0;
-    unsafe {
-        while *ptr.0.add(len) != 0 {
-            len += 1;
-        }
-
-        std::slice::from_raw_parts(ptr.0, len + 1).to_vec()
-    }
+    unsafe { std::slice::from_raw_parts(pwstr.as_ptr(), pwstr.len() + 1).to_vec() }
 }
 
 struct Service {
@@ -100,7 +93,6 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
     let status_w = 10;
     let rem = buf.width - prefix_w - status_w - 2;
     let max_name = rem / 2;
-    let max_path = rem - max_name;
 
     let visible_rows = list
         .services
@@ -354,7 +346,7 @@ fn run_tui(scm: SC_HANDLE) -> Result<()> {
                                 write!(&mut statusbar, "Loaded {} services", v)?;
                             }
                             Err(e) => {
-                                write!(&mut statusbar, "Error loading task: {}", e)?;
+                                write!(&mut statusbar, "Error loading services: {}", e)?;
                             }
                         }
                     }
@@ -382,12 +374,12 @@ fn run_tui(scm: SC_HANDLE) -> Result<()> {
                     }
                     (KeyCode::Char(' '), KeyModifiers::NONE) => {
                         // write status bar before, since startin/stopping service can take some time...
-                        write!(&mut statusbar, "Updating status...")?;
+                        write!(&mut statusbar, "Updating services...")?;
                         draw_ui(&mut new, &list, &statusbar, &headerbar);
                         common::ui::print_diff(&mut old, &mut new)?;
                         statusbar.clear();
                         if let Err(e) = list.toggle() {
-                            write!(&mut statusbar, "Error while changing status: {}", e)?;
+                            write!(&mut statusbar, "Error while changing service status: {}", e)?;
                         } else {
                             write!(&mut statusbar, "Service status changed")?;
                         }

@@ -91,7 +91,6 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
     buf.set_line(row_y, &sep);
     row_y += 1;
 
-    let prefix_w = 2;
     let type_width = 20;
     // fixme: consider screen size
     let name_width = list

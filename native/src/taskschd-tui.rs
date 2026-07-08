@@ -108,11 +108,11 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
 
     for r in visible_rows {
         let line = format!(
-            "{marker} {name:<name_width$} {state:<10} {path:<max_path$}",
+            "{marker} {name:<name_width$} {state} {path:<max_path$}",
             marker = if index == list.selected { '>' } else { ' ' },
             name = common::ui::trim(&r.name, max_name),
             name_width = max_name,
-            state = if r.enabled { "Enabled" } else { "Disabled" },
+            state = if r.enabled { "Enabled " } else { "Disabled" },
             path = common::ui::trim(&r.path, max_path).replace('\\', "/"),
         );
         buf.set_line(row_y, &line);
@@ -647,8 +647,7 @@ unsafe fn enumerate_folder_tasks(
     path: &str,
     out: &mut Vec<Task>,
 ) -> Result<()> {
-    let collection: windows::Win32::System::TaskScheduler::IRegisteredTaskCollection =
-        folder.GetTasks(TASK_ENUM_HIDDEN.0 as i32)?;
+    let collection = folder.GetTasks(TASK_ENUM_HIDDEN.0 as i32)?;
 
     for i in 1..=collection.Count()? {
         let task: IRegisteredTask = collection.get_Item(&VARIANT::from(i as i32))?;
