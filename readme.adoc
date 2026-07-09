@@ -32,21 +32,29 @@ Other advantages:
 
 == List of TUI program
 
-=== Registry Viewer/Editor (`regedit.exe`)
+=== Registry Editor (`regedit.exe`)
 
 Use `regedit-tui` to navigate the registry, add/remove keys, add/remove/edit values
+
+image::native/screenshots/regedit-tui.png["Screenshot of regedit-tui while editing a registry value"]
 
 === Task Scheduler (`taskschd.msc`)
 
 Use `taskschd-tui` to enable and disable tasks
 
+image::native/screenshots/taskschd-tui.png["Screenshot of taskschd-tui"]
+
 === Services (`services.msc`)
 
 Use `services-tui` to enable/disable/start/stop services
 
+image::native/screenshots/services-tui.png["Screenshot of services-tui while changing startup type of a service"]
+
 === Windows Firewall (`wf.msc`)
 
 Use `wf-tui` to enable, disable and delete rules
+
+image::native/screenshots/wf-tui.png["Screenshot of wf-tui"]
 
 == Programs that will not be added
 
