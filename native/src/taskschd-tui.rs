@@ -34,7 +34,7 @@ A TUI program for listing, enabling, and disabling scheduled tasks
 Command-line parameters
 
  --help                   - show this dialog
-
+ --version                - print version
 
 TUI options
 
@@ -441,6 +441,10 @@ fn main() -> Result<()> {
         match arg.as_str() {
             "--help" | "-h" | "?" | "/?" => {
                 println!("{}", HELP_TEXT);
+                return Ok(());
+            }
+            "--version" => {
+                println!("{}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             other => {
