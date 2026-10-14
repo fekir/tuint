@@ -164,7 +164,7 @@ impl List {
 
     fn toggle(&mut self) -> Result<()> {
         if let Some(rule) = self.get() {
-            let param = if (rule.enabled) {
+            let param = if rule.enabled {
                 windows::Win32::Foundation::VARIANT_FALSE
             } else {
                 windows::Win32::Foundation::VARIANT_TRUE

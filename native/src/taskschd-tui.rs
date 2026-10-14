@@ -27,7 +27,7 @@ use windows::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 static HELP_TEXT: &str = //
-    "Task Manager TUI
+    "Task Scheduler TUI
 
 A TUI program for listing, enabling, and disabling scheduled tasks
 

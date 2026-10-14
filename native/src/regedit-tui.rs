@@ -463,7 +463,7 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                                         Ok(Some(3)) => HKU,
                                         Ok(Some(4)) => HKCC,
                                         _ => {
-                                            write!(&mut statusbar, "Unexcpected status")?;
+                                            write!(&mut statusbar, "Unexpected status")?;
                                             continue;
                                         }
                                     };
