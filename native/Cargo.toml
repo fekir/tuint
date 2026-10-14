@@ -19,6 +19,10 @@ path = "src/services-tui.rs"
 name = "wf-tui"
 path = "src/wf-tui.rs"
 
+[[bin]]
+name = "taskmgr-tui"
+path = "src/taskmgr-tui.rs"
+
 [dependencies]
 crossterm = "0.29"
 
@@ -43,4 +47,11 @@ windows = { version = "0.62.2", features = [
   # wf-tui
   "Win32_NetworkManagement",
   "Win32_NetworkManagement_WindowsFirewall",
+
+  # taskmgr-tui
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_System_WindowsProgramming",
 ] }
