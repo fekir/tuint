@@ -312,9 +312,15 @@ fn run_tui(rules: INetFwRules) -> Result<()> {
                         let width = new.width;
                         let height = new.height;
                         common::ui::resize_buffers(&mut old, &mut new, width, height)?;
+                        let start = std::time::Instant::now();
                         match list.reload() {
                             Ok(v) => {
-                                write!(&mut statusbar, "Loaded {} tasks", v)?;
+                                write!(
+                                    &mut statusbar,
+                                    "Loaded {} tasks in {:.2?}",
+                                    v,
+                                    start.elapsed()
+                                )?;
                             }
                             Err(e) => {
                                 write!(&mut statusbar, "Error loading Firewall rules: {}", e)?;
