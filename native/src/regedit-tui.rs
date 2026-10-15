@@ -22,7 +22,7 @@ Command-line parameters
 
 TUI options
 
-Arrow Keys                - move up and down
+Arrow Keys/Mouse Wheel    - move up and down
 Home/End                  - go to start/end of list
 Q / F10 / Alt-0 / Ctrl+C  - close program
 H / ? / F1 / Alt-1        - show this dialog
@@ -746,6 +746,14 @@ fn run_tui(mut hive: Hive, mut path: String) -> Result<()> {
                 }
             }
             Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    list.selected = (list.selected + 1).min(list.tasks.len().saturating_sub(1));
+                    needs_redraw = true;
+                }
+                MouseEventKind::ScrollUp => {
+                    list.selected = list.selected.saturating_sub(1);
+                    needs_redraw = true;
+                }
                 MouseEventKind::Down(MouseButton::Left) => {
                     let mouse_row = mouse.row as usize;
                     // exclude header, status and empty rows
