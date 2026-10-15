@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+#[allow(dead_code)]
 mod common;
 use common::error::win32_error_to_boxed;
 

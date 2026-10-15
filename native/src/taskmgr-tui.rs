@@ -1,5 +1,6 @@
 use std::{collections::HashSet, fmt::Write, rc::Rc};
 
+#[allow(dead_code)]
 mod common;
 
 use crossterm::{
