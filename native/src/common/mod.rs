@@ -1,3 +1,4 @@
+pub mod com;
 pub mod error;
 pub mod process;
 pub mod regedit;

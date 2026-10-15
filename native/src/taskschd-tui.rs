@@ -12,10 +12,7 @@ use windows::{
     Win32::{
         Foundation::VARIANT_BOOL,
         System::{
-            Com::{
-                CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
-                COINIT_APARTMENTTHREADED,
-            },
+            Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
             TaskScheduler::{
                 IRegisteredTask, ITaskFolder, ITaskService, TaskScheduler, TASK_ENUM_HIDDEN,
             },
@@ -453,10 +450,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if hr.is_err() {
-        return Err("Unable to initialize COM interface".into());
-    }
+    let _guard = common::com::ComGuard::new()?;
 
     enable_raw_mode()?;
 
@@ -476,9 +470,6 @@ fn main() -> Result<()> {
         Clear(ClearType::All),
     )?;
     disable_raw_mode()?;
-    unsafe {
-        CoUninitialize();
-    }
     return res;
 }
 

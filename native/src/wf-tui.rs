@@ -15,10 +15,7 @@ use windows::{
             NET_FW_ACTION_BLOCK,
         },
         System::{
-            Com::{
-                CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch, CLSCTX_INPROC_SERVER,
-                COINIT_APARTMENTTHREADED,
-            },
+            Com::{CoCreateInstance, IDispatch, CLSCTX_INPROC_SERVER},
             Ole::IEnumVARIANT,
             Variant::VARIANT,
         },
@@ -220,10 +217,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if hr.is_err() {
-        return Err("Unable to initialize COM interface".into());
-    }
+    let _guard = common::com::ComGuard::new()?;
 
     let rules = unsafe {
         let fwpolicy: INetFwPolicy2 = CoCreateInstance(&NetFwPolicy2, None, CLSCTX_INPROC_SERVER)?;
@@ -251,9 +245,7 @@ fn main() -> Result<()> {
         Clear(ClearType::All),
     )?;
     disable_raw_mode()?;
-    unsafe {
-        CoUninitialize();
-    }
+
     return res;
 }
 
