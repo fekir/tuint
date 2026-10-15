@@ -56,7 +56,7 @@ fn parse_process(line: &str, now: u64) -> Option<ProcessInfo> {
     let pid = parts.next()?.parse().ok()?;
     let ppid = parts.next()?.parse().ok()?;
     let cpu = parts.next()?.parse().unwrap_or(0.0);
-    let rss_kb = parts.next()?.parse().unwrap_or(0.0);
+    let memory = parts.next()?.parse().unwrap_or(0.0);
     let etimes = parts.next()?.parse().unwrap_or(0.0);
 
     let command = parts.collect::<Vec<_>>().join(" ");
@@ -65,8 +65,25 @@ fn parse_process(line: &str, now: u64) -> Option<ProcessInfo> {
         pid: pid,
         ppid: ppid,
         name: command,
+        cpu_usage_percent: cpu,
+        memory_usage_percent: memory,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_process;
+
+    #[test]
+    fn parse_process_test() {
+        let process = parse_process("123 1 17.5 3.2 30 /usr/bin/example --parameter", 100).unwrap();
+        assert_eq!(process.pid, 123);
+        assert_eq!(process.ppid, 1);
+        assert_eq!(process.cpu_usage_percent, 17.5);
+        assert_eq!(process.memory_usage_percent, 3.2);
+        assert_eq!(process.name, "/usr/bin/example --parameter");
+    }
 }
 
 fn prune_empty_ancestors(processes: &mut Vec<ProcessInfo>, start_parent: u32) {
@@ -87,7 +104,7 @@ pub(crate) fn get_processes(distro: &str) -> Result<Vec<ProcessInfo>, String> {
     // ,comm= -> name, no args, but trimmed
     // ,args= -> full path and args
     // ?? -    > full path, no args
-    const PS_FORMAT: &str = "pid=,ppid=,pcpu=,rss=,etimes=,args=";
+    const PS_FORMAT: &str = "pid=,ppid=,pcpu=,pmem=,etimes=,args=";
 
     // run with root, does not require admin priv on windows
     // note: some wsl instances might not have root (fallback to default user) or ps (currently no fallback)
