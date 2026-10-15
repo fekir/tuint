@@ -170,7 +170,9 @@ pub(crate) fn kill_wsl_process(pi: &ProcessInfo) -> std::io::Result<()> {
             "root",
             "--exec",
             "kill",
-            "-TERM",
+            //"-TERM",
+            "-s",
+            "9",
         ])
         .arg(pi.pid.to_string())
         .status()?;
