@@ -14,6 +14,24 @@ pub(crate) struct ProcessInfo {
     pub(crate) start_time_unix: Option<i64>,
 }
 
+pub struct OwnedHandle(windows::Win32::Foundation::HANDLE);
+
+impl OwnedHandle {
+    pub fn new(handle: windows::Win32::Foundation::HANDLE) -> Self {
+        Self(handle)
+    }
+
+    pub fn raw(&self) -> windows::Win32::Foundation::HANDLE {
+        self.0
+    }
+}
+
+impl Drop for OwnedHandle {
+    fn drop(&mut self) {
+        let _ = unsafe { windows::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
@@ -21,7 +39,7 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
         return None;
     }
 
-    let handle = unsafe {
+    let handle = OwnedHandle(unsafe {
         windows::Win32::System::Threading::OpenProcess(
             windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION
                 | windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION,
@@ -29,7 +47,7 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
             pid,
         )
         .ok()?
-    };
+    });
 
     let mut creation_time = windows::Win32::Foundation::FILETIME::default();
     let mut exit_time = windows::Win32::Foundation::FILETIME::default();
@@ -38,7 +56,7 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
 
     let ok = unsafe {
         windows::Win32::System::Threading::GetProcessTimes(
-            handle,
+            handle.raw(),
             &mut creation_time,
             &mut exit_time,
             &mut kernel_time,
@@ -57,34 +75,37 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
         None
     };
 
-    let _ = unsafe { windows::Win32::Foundation::CloseHandle(handle) };
     output
 }
 
 fn executable_path(pid: u32) -> Option<String> {
-    let process = match {
-        unsafe{windows::Win32::System::Threading::OpenProcess(
-            windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-            false,
-            pid,
-        )}
-        .ok()
-    } {
-        Some(handle) => handle,
-        None => return None,
-    };
+    let process = OwnedHandle(
+        match {
+            unsafe {
+                windows::Win32::System::Threading::OpenProcess(
+                    windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
+                    false,
+                    pid,
+                )
+            }
+            .ok()
+        } {
+            Some(handle) => handle,
+            None => return None,
+        },
+    );
 
     let mut buffer = vec![0u16; 32_768];
     let mut len = buffer.len() as u32;
 
-    let ok = unsafe{windows::Win32::System::Threading::QueryFullProcessImageNameW(
-        process,
-        windows::Win32::System::Threading::PROCESS_NAME_WIN32,
-        windows::core::PWSTR(buffer.as_mut_ptr()),
-        &mut len,
-    )};
-
-    let _ = unsafe{ windows::Win32::Foundation::CloseHandle(process)};
+    let ok = unsafe {
+        windows::Win32::System::Threading::QueryFullProcessImageNameW(
+            process.raw(),
+            windows::Win32::System::Threading::PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+    };
 
     if ok.is_err() {
         return None;
@@ -98,24 +119,26 @@ fn process_memory_percent(pid: u32, total_physical_memory: u64) -> f64 {
         return 0.0;
     }
 
-    let handle = match unsafe {
-        windows::Win32::System::Threading::OpenProcess(
-            windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-            false,
-            pid,
-        )
-        .ok()
-    } {
-        Some(handle) => handle,
-        None => return 0.0,
-    };
+    let handle = OwnedHandle(
+        match unsafe {
+            windows::Win32::System::Threading::OpenProcess(
+                windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
+                false,
+                pid,
+            )
+            .ok()
+        } {
+            Some(handle) => handle,
+            None => return 0.0,
+        },
+    );
 
     let mut counters = windows::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS::default();
     counters.cb = std::mem::size_of_val(&counters) as u32;
 
     let ok = unsafe {
         windows::Win32::System::ProcessStatus::GetProcessMemoryInfo(
-            handle,
+            handle.raw(),
             &mut counters,
             std::mem::size_of_val(&counters) as u32,
         )
@@ -128,7 +151,6 @@ fn process_memory_percent(pid: u32, total_physical_memory: u64) -> f64 {
         0.0
     };
 
-    let _ = unsafe { windows::Win32::Foundation::CloseHandle(handle) };
     result
 }
 
@@ -194,12 +216,12 @@ fn parse_ps_cputime_100ns(s: &str) -> Option<u64> {
 }
 
 fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u32, ProcessInfo>> {
-    let snapshot = unsafe {
+    let snapshot = OwnedHandle(unsafe {
         windows::Win32::System::Diagnostics::ToolHelp::CreateToolhelp32Snapshot(
             windows::Win32::System::Diagnostics::ToolHelp::TH32CS_SNAPPROCESS,
             0,
         )?
-    };
+    });
 
     let mut entry = windows::Win32::System::Diagnostics::ToolHelp::PROCESSENTRY32W::default();
     entry.dwSize = std::mem::size_of_val(&entry) as u32;
@@ -207,7 +229,7 @@ fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u
     let mut processes = std::collections::HashMap::new();
 
     if unsafe {
-        windows::Win32::System::Diagnostics::ToolHelp::Process32FirstW(snapshot, &mut entry)
+        windows::Win32::System::Diagnostics::ToolHelp::Process32FirstW(snapshot.raw(), &mut entry)
     }
     .is_ok()
     {
@@ -249,17 +271,16 @@ fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u
             }
 
             if unsafe {
-                windows::Win32::System::Diagnostics::ToolHelp::Process32NextW(snapshot, &mut entry)
+                windows::Win32::System::Diagnostics::ToolHelp::Process32NextW(
+                    snapshot.raw(),
+                    &mut entry,
+                )
             }
             .is_err()
             {
                 break;
             }
         }
-    }
-
-    unsafe {
-        let _ = windows::Win32::Foundation::CloseHandle(snapshot);
     }
 
     Ok(processes)
@@ -313,20 +334,20 @@ pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
 
 // NOTE: might not kill children
 pub(crate) fn force_kill(pi: &ProcessInfo) -> std::io::Result<()> {
-    let handle = unsafe {
-        windows::Win32::System::Threading::OpenProcess(
-            windows::Win32::System::Threading::PROCESS_TERMINATE,
-            false,
-            pi.pid,
-        )
-    }
-    .map_err(|e| std::io::Error::from_raw_os_error(e.code().0 as i32))?;
+    let handle = OwnedHandle(
+        unsafe {
+            windows::Win32::System::Threading::OpenProcess(
+                windows::Win32::System::Threading::PROCESS_TERMINATE,
+                false,
+                pi.pid,
+            )
+        }
+        .map_err(|e| std::io::Error::from_raw_os_error(e.code().0 as i32))?,
+    );
 
-    let result = unsafe { windows::Win32::System::Threading::TerminateProcess(handle, 1) };
-    let close_result = unsafe { windows::Win32::Foundation::CloseHandle(handle) };
+    let result = unsafe { windows::Win32::System::Threading::TerminateProcess(handle.raw(), 1) };
 
     result.map_err(|e| std::io::Error::from_raw_os_error(e.code().0 as i32))?;
-    close_result.map_err(|e| std::io::Error::from_raw_os_error(e.code().0 as i32))?;
     Ok(())
 }
 
