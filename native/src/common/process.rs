@@ -64,26 +64,42 @@ fn process_times(handle: windows::Win32::Foundation::HANDLE) -> Option<(u64, u64
     output
 }
 
-fn executable_path(handle: windows::Win32::Foundation::HANDLE) -> Option<String> {
-    let mut buffer = vec![0u16; 32_768];
-    let mut len = buffer.len() as u32;
-
-    let ok = unsafe {
-        windows::Win32::System::Threading::QueryFullProcessImageNameW(
-            handle,
-            windows::Win32::System::Threading::PROCESS_NAME_WIN32,
-            windows::core::PWSTR(buffer.as_mut_ptr()),
-            &mut len,
-        )
-    };
-
-    if ok.is_err() {
-        return None;
+fn executable_path(
+    handle: windows::Win32::Foundation::HANDLE,
+    buffer: &mut Vec<u16>,
+) -> Option<String> {
+    if buffer.is_empty() {
+        buffer.resize(260, 0);
     }
 
-    Some(String::from_utf16_lossy(&buffer[..len as usize]))
-}
+    loop {
+        let mut len = u32::try_from(buffer.len()).ok()?;
 
+        match unsafe {
+            windows::Win32::System::Threading::QueryFullProcessImageNameW(
+                handle,
+                windows::Win32::System::Threading::PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buffer.as_mut_ptr()),
+                &mut len,
+            )
+        } {
+            Ok(()) => {
+                buffer.truncate(len as usize);
+                return Some(String::from_utf16_lossy(buffer));
+            }
+            Err(error)
+                if error.code()
+                    == windows::core::HRESULT::from_win32(
+                        windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER.0,
+                    ) =>
+            {
+                let new_len = buffer.len().checked_mul(2)?;
+                buffer.resize(new_len, 0);
+            }
+            Err(_) => return None,
+        }
+    }
+}
 fn process_memory_percent(
     handle: windows::Win32::Foundation::HANDLE,
     total_physical_memory: u64,
@@ -267,8 +283,9 @@ pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
 
     let logical_cpus = logical_cpu_count();
 
-    let mut processes = Vec::new();
+    let mut processes = Vec::with_capacity(second.len());
 
+    let mut path_buffer = Vec::new();
     for process in second {
         let cpu_usage_percent = match first.get(&process.1 .0.pid) {
             Some(previous) => {
@@ -290,7 +307,7 @@ pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
             process_memory_percent(process.1 .1.raw(), total_physical_memory);
 
         let fullname = if fullpath {
-            executable_path(process.1 .1.raw())
+            executable_path(process.1 .1.raw(), &mut path_buffer)
         } else {
             None
         };
