@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 
-use crate::common::process::ProcessInfo;
+use crate::common::process::{ProcessInfo, SystemMetrics};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -38,6 +38,7 @@ P                         - toggle path
 struct List {
     alltasks: Vec<ProcessInfo>,
     tasks: Vec<usize>,
+    metrics: SystemMetrics,
     selected: usize,
     top: usize,
     visible_height: usize,
@@ -177,12 +178,12 @@ fn run_tui() -> Result<()> {
                                         &["yes", "no"],
                                     ) {
                                         Ok(Some(0)) => {
-                                            let result =
-                                                if process.subsystem.as_ref() == "Windows" {
-                                                    common::process::force_kill(process)
-                                                } else {
-                                                    common::wslprocess::kill_wsl_process(process)
-                                                };
+                                            let result = if process.subsystem.as_ref() == "Windows"
+                                            {
+                                                common::process::force_kill(process)
+                                            } else {
+                                                common::wslprocess::kill_wsl_process(process)
+                                            };
 
                                             if let Err(e) = result {
                                                 write!(
@@ -368,6 +369,7 @@ impl List {
         Self {
             alltasks: Vec::new(),
             tasks: Vec::new(),
+            metrics: SystemMetrics::default(),
             top: 0,
             selected: 0,
             visible_height: 0,
@@ -425,6 +427,7 @@ impl List {
 
         self.apply_filter();
         self.selected = self.selected.min(self.tasks.len().saturating_sub(1));
+        self.metrics.sample()?;
         Ok(self.tasks.len())
     }
     fn apply_filter(&mut self) {
@@ -453,7 +456,7 @@ fn create_headerbar(buf: &common::ui::ScreenBuffer, list: &List, headerbar: &mut
     let pid_width = list
         .alltasks
         .iter()
-        .map(|r| r.pid.to_string().len())
+        .map(|r| decimal_digits(r.pid as usize))
         .max()
         .unwrap_or(3);
 
@@ -464,6 +467,7 @@ fn create_headerbar(buf: &common::ui::ScreenBuffer, list: &List, headerbar: &mut
     let max_path = rem - max_name;
 
     headerbar.clear();
+    system_status_lines(&list.metrics, buf.width, headerbar);
     write!(
         headerbar,
         "Task Manager TUI\n{marker} {pid:>pid_width$} {cpu:>5} {mem:>5} {time:>8} {name:<name_width$} ",
@@ -599,4 +603,84 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
 
     // 5. Status line
     buf.set_line(buf.height - 1, &statusbar);
+}
+
+fn system_status_lines(metrics: &SystemMetrics, width: usize, output: &mut String) {
+    const CPU_GRAPH_WIDTH: usize = 10;
+
+    let cpu_count = metrics.cpu_usage_percent.len();
+    let cpu_number_width = decimal_digits(cpu_count.saturating_sub(1)).max(1);
+    let cpu_meter_width = cpu_number_width + CPU_GRAPH_WIDTH + 9;
+    let columns = width
+        .saturating_add(2)
+        .checked_div(cpu_meter_width + 2)
+        .unwrap_or(1)
+        .max(1)
+        .min(cpu_count.max(1));
+    let rows = cpu_count.div_ceil(columns);
+
+    for row in 0..rows {
+        let mut has_meter = false;
+        for column in 0..columns {
+            let index = column * rows + row;
+            let Some(usage) = metrics.cpu_usage_percent.get(index) else {
+                continue;
+            };
+            if has_meter {
+                output.push_str("  ");
+            }
+            has_meter = true;
+            write!(output, "{index:>cpu_number_width$}[").unwrap();
+            write_meter_graph(output, *usage, CPU_GRAPH_WIDTH);
+            write!(output, "] {:5.1}%", usage).unwrap();
+        }
+        output.push('\n');
+    }
+
+    let uptime_days = metrics.uptime_seconds / 86_400;
+    let uptime_hours = (metrics.uptime_seconds / 3_600) % 24;
+    let uptime_minutes = (metrics.uptime_seconds / 60) % 60;
+    let uptime_seconds = metrics.uptime_seconds % 60;
+    let memory_graph_width = width.saturating_sub(13).min(30);
+    let memory_start = output.len();
+    output.push_str("Mem [");
+    write_meter_graph(output, metrics.memory_usage_percent, memory_graph_width);
+    write!(output, "] {:5.1}%", metrics.memory_usage_percent).unwrap();
+    let uptime_start = output.len();
+    if uptime_days > 0 {
+        write!(
+            output,
+            "Uptime {uptime_days}d {uptime_hours:02}:{uptime_minutes:02}"
+        )
+        .unwrap();
+    } else {
+        write!(
+            output,
+            "Uptime {uptime_hours:02}:{uptime_minutes:02}:{uptime_seconds:02}"
+        )
+        .unwrap();
+    }
+    let uptime_len = output.len() - uptime_start;
+    if uptime_start - memory_start + uptime_len + 2 <= width {
+        output.insert_str(uptime_start, "  ");
+        output.push('\n');
+    } else {
+        output.insert(uptime_start, '\n');
+        output.push('\n');
+    }
+}
+
+fn write_meter_graph(output: &mut String, percent: f64, width: usize) {
+    let filled = (percent.clamp(0.0, 100.0) / 100.0 * width as f64).round() as usize;
+    output.extend(std::iter::repeat('|').take(filled));
+    output.extend(std::iter::repeat(' ').take(width - filled));
+}
+
+fn decimal_digits(mut value: usize) -> usize {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
 }

@@ -1,4 +1,4 @@
-use std::os::windows::ffi::OsStringExt;
+use std::{fmt::Write, os::windows::ffi::OsStringExt};
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ProcessInfo {
@@ -347,6 +347,154 @@ pub(crate) fn force_kill(pi: &ProcessInfo) -> std::io::Result<()> {
 
     result.map_err(|e| std::io::Error::from_raw_os_error(e.code().0 as i32))?;
     Ok(())
+}
+
+#[derive(Default)]
+struct CpuSampler {
+    query: Option<windows::Win32::System::Performance::PDH_HQUERY>,
+    counters: Vec<windows::Win32::System::Performance::PDH_HCOUNTER>,
+    primed: bool,
+}
+
+impl CpuSampler {
+    fn initialize(&mut self) -> Result<()> {
+        if self.query.is_some() {
+            return Ok(());
+        }
+
+        let mut query = windows::Win32::System::Performance::PDH_HQUERY::default();
+        let status = unsafe {
+            windows::Win32::System::Performance::PdhOpenQueryW(
+                windows::core::PCWSTR::null(),
+                0,
+                &mut query,
+            )
+        };
+        if status != 0 {
+            return Err(std::io::Error::other(format!("PDH error 0x{status:08X}")).into());
+        }
+        self.query = Some(query);
+
+        let group_count =
+            unsafe { windows::Win32::System::Threading::GetActiveProcessorGroupCount() };
+        let mut buffer = String::new();
+        for group in 0..group_count {
+            let processor_count =
+                unsafe { windows::Win32::System::Threading::GetActiveProcessorCount(group) };
+            for processor in 0..processor_count {
+                buffer.clear();
+                write!(
+                    &mut buffer,
+                    "\\Processor Information({group},{processor})\\% Processor Time"
+                )?;
+                let path: Vec<u16> = buffer.encode_utf16().chain(Some(0)).collect();
+                let mut counter = windows::Win32::System::Performance::PDH_HCOUNTER::default();
+                let status = unsafe {
+                    windows::Win32::System::Performance::PdhAddEnglishCounterW(
+                        query,
+                        windows::core::PCWSTR(path.as_ptr()),
+                        0,
+                        &mut counter,
+                    )
+                };
+                if status != 0 {
+                    return Err(std::io::Error::other(format!("PDH error 0x{status:08X}")).into());
+                }
+                self.counters.push(counter);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn sample(&mut self, usage_percent: &mut Vec<f64>) -> Result<()> {
+        use windows::Win32::System::Performance::{
+            PdhCollectQueryData, PdhGetFormattedCounterValue, PDH_CALC_NEGATIVE_DENOMINATOR,
+            PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE,
+        };
+
+        self.initialize()?;
+        let query = self.query.expect("initialized PDH query");
+        let status = unsafe { PdhCollectQueryData(query) };
+        if status != 0 {
+            return Err(std::io::Error::other(format!("PDH error 0x{status:08X}")).into());
+        }
+        usage_percent.clear();
+        usage_percent.resize(self.counters.len(), 0.0);
+        if !self.primed {
+            self.primed = true;
+            return Ok(());
+        }
+
+        for (usage, counter) in usage_percent.iter_mut().zip(&self.counters) {
+            let mut value = PDH_FMT_COUNTERVALUE::default();
+            let status =
+                unsafe { PdhGetFormattedCounterValue(*counter, PDH_FMT_DOUBLE, None, &mut value) };
+            if status == windows::Win32::System::Performance::PDH_INVALID_DATA
+                || status == PDH_CALC_NEGATIVE_DENOMINATOR
+            {
+                continue;
+            }
+            if status != 0 {
+                return Err(std::io::Error::other(format!("PDH error 0x{status:08X}")).into());
+            }
+
+            if value.CStatus == PDH_CSTATUS_VALID_DATA || value.CStatus == PDH_CSTATUS_NEW_DATA {
+                *usage = unsafe { value.Anonymous.doubleValue.clamp(0.0, 100.0) };
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for CpuSampler {
+    fn drop(&mut self) {
+        if let Some(query) = self.query.take() {
+            unsafe {
+                windows::Win32::System::Performance::PdhCloseQuery(query);
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SystemMetrics {
+    pub(crate) cpu_sampler: CpuSampler,
+    pub(crate) cpu_usage_percent: Vec<f64>,
+    pub(crate) memory_usage_percent: f64,
+    pub(crate) uptime_seconds: u64,
+}
+
+impl SystemMetrics {
+    pub(crate) fn sample(&mut self) -> Result<()> {
+        self.cpu_sampler.sample(&mut self.cpu_usage_percent)?;
+
+        let mut memory_info =
+            windows::Win32::System::ProcessStatus::PERFORMANCE_INFORMATION::default();
+        memory_info.cb = std::mem::size_of_val(&memory_info) as u32;
+        unsafe {
+            windows::Win32::System::ProcessStatus::GetPerformanceInfo(
+                &mut memory_info,
+                std::mem::size_of_val(&memory_info) as u32,
+            )?;
+        }
+        let total_pages = memory_info.PhysicalTotal as u64;
+        let available_pages = memory_info.PhysicalAvailable as u64;
+        let memory_usage_percent = if total_pages == 0 {
+            0.0
+        } else {
+            (total_pages.saturating_sub(available_pages) as f64 / total_pages as f64 * 100.0)
+                .clamp(0.0, 100.0)
+        };
+
+        let uptime_seconds =
+            unsafe { windows::Win32::System::SystemInformation::GetTickCount64() / 1_000 };
+
+        self.memory_usage_percent = memory_usage_percent;
+        self.uptime_seconds = uptime_seconds;
+        Ok(())
+    }
 }
 
 /// Returns one formatted line per process
