@@ -34,21 +34,7 @@ impl Drop for OwnedHandle {
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
-    if pid == 0 {
-        return None;
-    }
-
-    let handle = OwnedHandle(unsafe {
-        windows::Win32::System::Threading::OpenProcess(
-            windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION
-                | windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION,
-            false,
-            pid,
-        )
-        .ok()?
-    });
-
+fn process_times(handle: windows::Win32::Foundation::HANDLE) -> Option<(u64, u64, Option<i64>)> {
     let mut creation_time = windows::Win32::Foundation::FILETIME::default();
     let mut exit_time = windows::Win32::Foundation::FILETIME::default();
     let mut kernel_time = windows::Win32::Foundation::FILETIME::default();
@@ -56,7 +42,7 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
 
     let ok = unsafe {
         windows::Win32::System::Threading::GetProcessTimes(
-            handle.raw(),
+            handle,
             &mut creation_time,
             &mut exit_time,
             &mut kernel_time,
@@ -78,29 +64,13 @@ fn process_times(pid: u32) -> Option<(u64, u64, Option<i64>)> {
     output
 }
 
-fn executable_path(pid: u32) -> Option<String> {
-    let process = OwnedHandle(
-        match {
-            unsafe {
-                windows::Win32::System::Threading::OpenProcess(
-                    windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-                    false,
-                    pid,
-                )
-            }
-            .ok()
-        } {
-            Some(handle) => handle,
-            None => return None,
-        },
-    );
-
+fn executable_path(handle: windows::Win32::Foundation::HANDLE) -> Option<String> {
     let mut buffer = vec![0u16; 32_768];
     let mut len = buffer.len() as u32;
 
     let ok = unsafe {
         windows::Win32::System::Threading::QueryFullProcessImageNameW(
-            process.raw(),
+            handle,
             windows::Win32::System::Threading::PROCESS_NAME_WIN32,
             windows::core::PWSTR(buffer.as_mut_ptr()),
             &mut len,
@@ -114,31 +84,20 @@ fn executable_path(pid: u32) -> Option<String> {
     Some(String::from_utf16_lossy(&buffer[..len as usize]))
 }
 
-fn process_memory_percent(pid: u32, total_physical_memory: u64) -> f64 {
-    if pid == 0 || total_physical_memory == 0 {
+fn process_memory_percent(
+    handle: windows::Win32::Foundation::HANDLE,
+    total_physical_memory: u64,
+) -> f64 {
+    if total_physical_memory == 0 {
         return 0.0;
     }
-
-    let handle = OwnedHandle(
-        match unsafe {
-            windows::Win32::System::Threading::OpenProcess(
-                windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-                false,
-                pid,
-            )
-            .ok()
-        } {
-            Some(handle) => handle,
-            None => return 0.0,
-        },
-    );
 
     let mut counters = windows::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS::default();
     counters.cb = std::mem::size_of_val(&counters) as u32;
 
     let ok = unsafe {
         windows::Win32::System::ProcessStatus::GetProcessMemoryInfo(
-            handle.raw(),
+            handle,
             &mut counters,
             std::mem::size_of_val(&counters) as u32,
         )
@@ -215,7 +174,7 @@ fn parse_ps_cputime_100ns(s: &str) -> Option<u64> {
     Some(seconds.saturating_mul(10_000_000))
 }
 
-fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u32, ProcessInfo>> {
+fn collect_process_samples() -> Result<std::collections::HashMap<u32, (ProcessInfo, OwnedHandle)>> {
     let snapshot = OwnedHandle(unsafe {
         windows::Win32::System::Diagnostics::ToolHelp::CreateToolhelp32Snapshot(
             windows::Win32::System::Diagnostics::ToolHelp::TH32CS_SNAPPROCESS,
@@ -237,37 +196,49 @@ fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u
             let pid = entry.th32ProcessID;
             let ppid = entry.th32ParentProcessID;
 
-            let mut name = if fullpath {
-                 executable_path(pid) .unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let handle = unsafe {
+                windows::Win32::System::Threading::OpenProcess(
+                    windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION
+                        | windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION,
+                    false,
+                    pid,
+                )
+            }
+            .ok()
+            .map(OwnedHandle);
 
-            if name.is_empty() {
+            // either previous query failed or !fullpath
+            let name = {
                 let end = entry
                     .szExeFile
                     .iter()
                     .position(|&c| c == 0)
                     .unwrap_or(entry.szExeFile.len());
 
-                name = std::ffi::OsString::from_wide(&entry.szExeFile[..end])
+                std::ffi::OsString::from_wide(&entry.szExeFile[..end])
                     .to_string_lossy()
                     .into_owned()
             };
 
-            if let Some((kernel_time, user_time, start_time_unix)) = process_times(pid) {
-                processes.insert(
-                    pid,
-                    ProcessInfo {
+            if let Some(handle) = handle {
+                if let Some((kernel_time, user_time, start_time_unix)) = process_times(handle.raw())
+                {
+                    processes.insert(
                         pid,
-                        ppid,
-                        name,
-                        kernel_time,
-                        user_time,
-                        start_time_unix,
-                        ..Default::default()
-                    },
-                );
+                        (
+                            ProcessInfo {
+                                pid,
+                                ppid,
+                                name,
+                                kernel_time,
+                                user_time,
+                                start_time_unix,
+                                ..Default::default()
+                            },
+                            handle,
+                        ),
+                    );
+                }
             }
 
             if unsafe {
@@ -287,23 +258,26 @@ fn collect_process_samples(fullpath: bool) -> Result<std::collections::HashMap<u
 }
 
 pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
-    let first = collect_process_samples(false)?;
+    let total_physical_memory = total_physical_memory()?;
+    let first = collect_process_samples()?;
     let start = std::time::Instant::now();
     std::thread::sleep(std::time::Duration::from_millis(500));
-    let second = collect_process_samples(fullpath)?;
+    let second = collect_process_samples()?;
     let elapsed_100ns = (start.elapsed().as_nanos() / 100) as f64;
 
     let logical_cpus = logical_cpu_count();
 
-    let total_physical_memory = total_physical_memory()?;
-
     let mut processes = Vec::new();
 
-    for process in second.values() {
-        let cpu_usage_percent = match first.get(&process.pid) {
+    for process in second {
+        let cpu_usage_percent = match first.get(&process.1 .0.pid) {
             Some(previous) => {
-                let process_delta = process.kernel_time.saturating_sub(previous.kernel_time)
-                    + process.user_time.saturating_sub(previous.user_time);
+                let process_delta = process
+                    .1
+                     .0
+                    .kernel_time
+                    .saturating_sub(previous.0.kernel_time)
+                    + process.1 .0.user_time.saturating_sub(previous.0.user_time);
 
                 // Process time is measured in 100 ns units.
                 // Divide by elapsed wall-clock time and logical CPU count.
@@ -312,19 +286,26 @@ pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
             None => 0.0,
         };
 
-        let memory_usage_percent = process_memory_percent(process.pid, total_physical_memory);
+        let memory_usage_percent =
+            process_memory_percent(process.1 .1.raw(), total_physical_memory);
+
+        let fullname = if fullpath {
+            executable_path(process.1 .1.raw())
+        } else {
+            None
+        };
 
         processes.push(ProcessInfo {
-            pid: process.pid,
-            ppid: process.ppid,
-            name: process.name.clone(),
+            pid: process.1 .0.pid,
+            ppid: process.1 .0.ppid,
+            name: fullname.unwrap_or_else(|| process.1 .0.name.clone()),
             prefix: String::new(),
             subsystem: std::rc::Rc::from("Windows"),
             cpu_usage_percent: cpu_usage_percent.clamp(0.0, 100.0),
             memory_usage_percent,
-            start_time_unix: process.start_time_unix,
-            kernel_time: process.kernel_time,
-            user_time: process.user_time,
+            start_time_unix: process.1 .0.start_time_unix,
+            kernel_time: process.1 .0.kernel_time,
+            user_time: process.1 .0.user_time,
         });
     }
 
