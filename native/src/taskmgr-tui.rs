@@ -37,6 +37,7 @@ P                         - toggle path
 
 struct List {
     alltasks: Vec<ProcessInfo>,
+    windows_sample_time: std::time::Instant,
     tasks: Vec<usize>,
     metrics: SystemMetrics,
     selected: usize,
@@ -152,6 +153,7 @@ fn run_tui() -> Result<()> {
                             let width = new.width;
                             let height = new.height;
                             common::ui::resize_buffers(&mut old, &mut new, width, height)?;
+                            list.alltasks.clear();
                             let start = std::time::Instant::now();
                             match list.reload(fullpath) {
                                 Ok(v) => {
@@ -368,6 +370,7 @@ impl List {
     fn new() -> Self {
         Self {
             alltasks: Vec::new(),
+            windows_sample_time: std::time::Instant::now(),
             tasks: Vec::new(),
             metrics: SystemMetrics::default(),
             top: 0,
@@ -379,7 +382,13 @@ impl List {
     }
 
     fn reload(&mut self, fullpath: bool) -> Result<usize> {
-        let wintasks = common::process::get_processes(fullpath).unwrap();
+        let sample_time = std::time::Instant::now();
+        let wintasks = common::process::get_processes(
+            fullpath,
+            &self.alltasks,
+            sample_time.duration_since(self.windows_sample_time),
+        )?;
+        self.windows_sample_time = sample_time;
         let refs: Vec<&ProcessInfo> = wintasks.iter().collect();
         self.alltasks = common::process::process_tree_lines(&refs);
 
@@ -400,7 +409,7 @@ impl List {
             },
         );
 
-        let distros = common::wslprocess::get_distributions().unwrap();
+        let distros = common::wslprocess::get_distributions().unwrap_or_default();
         for d in distros {
             let dtasks = common::wslprocess::get_processes(&d).unwrap();
             let refs: Vec<&ProcessInfo> = dtasks.iter().collect();

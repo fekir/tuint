@@ -273,34 +273,43 @@ fn collect_process_samples() -> Result<std::collections::HashMap<u32, (ProcessIn
     Ok(processes)
 }
 
-pub(crate) fn get_processes(fullpath: bool) -> Result<Vec<ProcessInfo>> {
+pub(crate) fn get_processes(
+    fullpath: bool,
+    previous: &[ProcessInfo],
+    elapsed: std::time::Duration,
+) -> Result<Vec<ProcessInfo>> {
     let total_physical_memory = total_physical_memory()?;
-    let first = collect_process_samples()?;
-    let start = std::time::Instant::now();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    let second = collect_process_samples()?;
-    let elapsed_100ns = (start.elapsed().as_nanos() / 100) as f64;
-
     let logical_cpus = logical_cpu_count();
+
+    let first: std::collections::HashMap<_, _> = previous
+        .iter()
+        .filter(|p| p.subsystem.as_ref() == "Windows")
+        .map(|p| (p.pid, p))
+        .collect();
+    let second = collect_process_samples()?;
+    let elapsed_100ns = elapsed.as_secs_f64() * 10_000_000.0;
 
     let mut processes = Vec::with_capacity(second.len());
 
     let mut path_buffer = Vec::new();
     for process in second {
         let cpu_usage_percent = match first.get(&process.1 .0.pid) {
-            Some(previous) => {
+            Some(previous)
+                if previous.start_time_unix == process.1 .0.start_time_unix
+                    && elapsed_100ns > 0.0 =>
+            {
                 let process_delta = process
                     .1
                      .0
                     .kernel_time
-                    .saturating_sub(previous.0.kernel_time)
-                    + process.1 .0.user_time.saturating_sub(previous.0.user_time);
+                    .saturating_sub(previous.kernel_time)
+                    + process.1 .0.user_time.saturating_sub(previous.user_time);
 
                 // Process time is measured in 100 ns units.
                 // Divide by elapsed wall-clock time and logical CPU count.
                 (process_delta as f64 / elapsed_100ns as f64) * 100.0 / logical_cpus as f64
             }
-            None => 0.0,
+            _ => 0.0,
         };
 
         let memory_usage_percent =
