@@ -109,7 +109,9 @@ pub(crate) fn get_processes(distro: &str) -> Result<Vec<ProcessInfo>, String> {
     // run with root, does not require admin priv on windows
     // note: some wsl instances might not have root (fallback to default user) or ps (currently no fallback)
     let output = Command::new("wsl.exe")
-        .args(["-d", distro, "--user", "root", "--", "ps", "-eo", PS_FORMAT])
+        .args([
+            "-d", distro, "--user", "root", "--exec", "ps", "-eo", PS_FORMAT,
+        ])
         .output()
         .map_err(|e| format!("Failed to execute wsl.exe: {e}"))?;
 
@@ -117,7 +119,7 @@ pub(crate) fn get_processes(distro: &str) -> Result<Vec<ProcessInfo>, String> {
         output
     } else {
         Command::new("wsl.exe")
-            .args(["-d", distro, "--", "ps", "-eo", PS_FORMAT])
+            .args(["-d", distro, "--exec", "ps", "-eo", PS_FORMAT])
             .output()
             .map_err(|e| format!("Failed to execute wsl.exe: {e}"))?
     };
