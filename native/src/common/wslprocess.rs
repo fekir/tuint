@@ -55,8 +55,8 @@ fn parse_process(line: &str, now: u64) -> Option<ProcessInfo> {
 
     let pid = parts.next()?.parse().ok()?;
     let ppid = parts.next()?.parse().ok()?;
-    let cpu = parts.next()?.parse().unwrap_or(0.0);
-    let memory = parts.next()?.parse().unwrap_or(0.0);
+    let cpu = parts.next()?.parse().unwrap_or(-1.0);
+    let memory = parts.next()?.parse().unwrap_or(-1.0);
     let etimes = parts.next()?.parse().unwrap_or(0.0);
 
     let command = parts.collect::<Vec<_>>().join(" ");

@@ -105,7 +105,7 @@ fn process_memory_percent(
     total_physical_memory: u64,
 ) -> f64 {
     if total_physical_memory == 0 {
-        return 0.0;
+        return -1.0;
     }
 
     let mut counters = windows::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS::default();
@@ -123,7 +123,7 @@ fn process_memory_percent(
     let result = if ok {
         counters.WorkingSetSize as f64 / total_physical_memory as f64 * 100.0
     } else {
-        0.0
+        -1.0
     };
 
     result
@@ -190,7 +190,8 @@ fn parse_ps_cputime_100ns(s: &str) -> Option<u64> {
     Some(seconds.saturating_mul(10_000_000))
 }
 
-fn collect_process_samples() -> Result<std::collections::HashMap<u32, (ProcessInfo, OwnedHandle)>> {
+fn collect_process_samples(
+) -> Result<std::collections::HashMap<u32, (ProcessInfo, Option<OwnedHandle>)>> {
     let snapshot = OwnedHandle(unsafe {
         windows::Win32::System::Diagnostics::ToolHelp::CreateToolhelp32Snapshot(
             windows::Win32::System::Diagnostics::ToolHelp::TH32CS_SNAPPROCESS,
@@ -236,26 +237,26 @@ fn collect_process_samples() -> Result<std::collections::HashMap<u32, (ProcessIn
                     .into_owned()
             };
 
-            if let Some(handle) = handle {
-                if let Some((kernel_time, user_time, start_time_unix)) = process_times(handle.raw())
-                {
-                    processes.insert(
+            let (kernel_time, user_time, start_time_unix) = handle
+                .as_ref()
+                .and_then(|h| process_times(h.raw()))
+                .unwrap_or_default();
+
+            processes.insert(
+                pid,
+                (
+                    ProcessInfo {
                         pid,
-                        (
-                            ProcessInfo {
-                                pid,
-                                ppid,
-                                name,
-                                kernel_time,
-                                user_time,
-                                start_time_unix,
-                                ..Default::default()
-                            },
-                            handle,
-                        ),
-                    );
-                }
-            }
+                        ppid,
+                        name,
+                        kernel_time,
+                        user_time,
+                        start_time_unix,
+                        ..Default::default()
+                    },
+                    handle,
+                ),
+            );
 
             if unsafe {
                 windows::Win32::System::Diagnostics::ToolHelp::Process32NextW(
@@ -295,7 +296,8 @@ pub(crate) fn get_processes(
     for process in second {
         let cpu_usage_percent = match first.get(&process.1 .0.pid) {
             Some(previous)
-                if previous.start_time_unix == process.1 .0.start_time_unix
+                if previous.start_time_unix.is_some()
+                    && previous.start_time_unix == process.1 .0.start_time_unix
                     && elapsed_100ns > 0.0 =>
             {
                 let process_delta = process
@@ -307,16 +309,25 @@ pub(crate) fn get_processes(
 
                 // Process time is measured in 100 ns units.
                 // Divide by elapsed wall-clock time and logical CPU count.
-                (process_delta as f64 / elapsed_100ns as f64) * 100.0 / logical_cpus as f64
+                ((process_delta as f64 / elapsed_100ns as f64) * 100.0 / logical_cpus as f64)
+                    .clamp(0.0, 100.0)
             }
-            _ => 0.0,
+            _ => -1.0,
         };
 
-        let memory_usage_percent =
-            process_memory_percent(process.1 .1.raw(), total_physical_memory);
+        let memory_usage_percent = process
+            .1
+             .1
+            .as_ref()
+            .map(|h| process_memory_percent(h.raw(), total_physical_memory))
+            .unwrap_or(-1.0);
 
         let fullname = if fullpath {
-            executable_path(process.1 .1.raw(), &mut path_buffer)
+            process
+                .1
+                 .1
+                .as_ref()
+                .and_then(|h| executable_path(h.raw(), &mut path_buffer))
         } else {
             None
         };
@@ -327,7 +338,7 @@ pub(crate) fn get_processes(
             name: fullname.unwrap_or_else(|| process.1 .0.name.clone()),
             prefix: String::new(),
             subsystem: std::rc::Rc::from("Windows"),
-            cpu_usage_percent: cpu_usage_percent.clamp(0.0, 100.0),
+            cpu_usage_percent,
             memory_usage_percent,
             start_time_unix: process.1 .0.start_time_unix,
             kernel_time: process.1 .0.kernel_time,
@@ -606,7 +617,26 @@ fn render_process<'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::common::process;
+
     use super::*;
+
+    #[test]
+    fn wininit_is_listed() {
+        let processes = get_processes(false, &[], std::time::Duration::ZERO).unwrap();
+        let wininit = processes
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("wininit.exe"))
+            .expect("wininit should always be there");
+
+        assert_eq!(wininit.subsystem.as_ref(), "Windows");
+        assert_eq!(wininit.cpu_usage_percent, -1.0);
+
+        let process_refs: Vec<&ProcessInfo> = processes.iter().collect();
+        assert!(process_tree_lines(&process_refs)
+            .iter()
+            .any(|p| p.pid == wininit.pid));
+    }
 
     #[test]
     fn process_tree_is_rendered_correctly() {

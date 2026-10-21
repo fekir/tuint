@@ -401,8 +401,8 @@ impl List {
                 name: "<Windows>".to_owned(),
                 prefix: "".to_owned(),
                 subsystem: Rc::from(""),
-                cpu_usage_percent: 0.0,
-                memory_usage_percent: 0.0,
+                cpu_usage_percent: -1.0,
+                memory_usage_percent: -1.0,
                 kernel_time: 0,
                 user_time: 0,
                 start_time_unix: None,
@@ -423,8 +423,8 @@ impl List {
                     name: d,
                     prefix: "".to_owned(),
                     subsystem: Rc::from(""),
-                    cpu_usage_percent: 0.0,
-                    memory_usage_percent: 0.0,
+                    cpu_usage_percent: -1.0,
+                    memory_usage_percent: -1.0,
                     kernel_time: 0,
                     user_time: 0,
                     start_time_unix: None,
@@ -514,6 +514,14 @@ fn is_hidden_by_collapsed_ancestor(
     false
 }
 
+fn format_process_percent(v: f64) -> String {
+    if v < 0.0 {
+        "-".to_owned()
+    } else {
+        format!("{v:.1}")
+    }
+}
+
 fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, headerbar: &str) {
     if buf.width < 26 {
         let mut line = 0;
@@ -585,11 +593,11 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
         let hundredths = centiseconds % 100;
 
         let line = format!(
-            "{marker} {pid:>pid_width$} {cpu:5.1} {mem:5.1} {time:>8} {prefix}{name:<name_width$}",
+            "{marker} {pid:>pid_width$} {cpu:>5} {mem:>5} {time:>8} {prefix}{name:<name_width$}",
             marker = if index == list.selected { '>' } else { ' ' },
             pid = r.pid,
-            cpu = r.cpu_usage_percent,
-            mem = r.memory_usage_percent,
+            cpu = format_process_percent(r.cpu_usage_percent),
+            mem = format_process_percent(r.memory_usage_percent),
             time = format!("{minutes}:{seconds:02}.{hundredths:02}"),
             prefix = prefix,
             name = common::ui::trim(&r.name, max_name),
