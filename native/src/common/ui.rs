@@ -20,9 +20,11 @@ impl ScreenBuffer {
         let start = y * self.width;
         let row = &mut self.cells[start..start + self.width];
         row.fill(b' ');
-        let bytes = text.as_bytes();
-        let n = bytes.len().min(self.width);
-        row[..n].copy_from_slice(&bytes[..n]);
+        let mut n = text.len().min(self.width);
+        while !text.is_char_boundary(n) {
+            n -= 1;
+        }
+        row[..n].copy_from_slice(&text.as_bytes()[..n]);
     }
 
     pub fn row(&self, y: usize) -> &[u8] {
@@ -64,7 +66,14 @@ pub fn print_diff(
     new: &ScreenBuffer,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut stdout = std::io::stdout();
+    print_diff_to(old, new, &mut stdout)
+}
 
+fn print_diff_to(
+    old: &mut ScreenBuffer,
+    new: &ScreenBuffer,
+    stdout: &mut impl std::io::Write,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     for y in 0..new.height {
         let row_old = old.row_mut(y);
         let row_new = new.row(y);
@@ -73,36 +82,128 @@ pub fn print_diff(
             continue;
         }
 
-        let mut x = 0;
-
-        while x < new.width {
-            while x < new.width && row_old[x] == row_new[x] {
-                x += 1;
-            }
-
-            // might break multibyte character
-            //let start = x;
-            //while x < new.width && row_old[x] != row_new[x] {
-            //    x += 1;
-            //}
-            //let length = x - start;
-            let start = 0;
-            let length = new.width;
-
-            crossterm::QueueableCommand::queue(
-                &mut stdout,
-                crossterm::cursor::MoveTo(start as u16, y as u16),
-            )?;
-
-            let slice = &row_new[start..start + length];
-            std::io::Write::write_all(&mut stdout, slice)?;
-
-            row_old[start..start + length].copy_from_slice(slice);
+        let (old_text, new_text) =
+            match (std::str::from_utf8(row_old), std::str::from_utf8(row_new)) {
+                (Ok(old_text), Ok(new_text)) => (old_text, new_text),
+                _ => {
+                    crossterm::QueueableCommand::queue(
+                        stdout,
+                        crossterm::cursor::MoveTo(0, y as u16),
+                    )?;
+                    crossterm::QueueableCommand::queue(
+                        stdout,
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+                    )?;
+                    let text = String::from_utf8_lossy(row_new);
+                    std::io::Write::write_all(stdout, text.as_bytes())?;
+                    row_old.copy_from_slice(row_new);
+                    continue;
+                }
+            };
+        let mut start = row_old
+            .iter()
+            .zip(row_new)
+            .take_while(|(old, new)| old == new)
+            .count();
+        while !old_text.is_char_boundary(start) || !new_text.is_char_boundary(start) {
+            start -= 1;
         }
+
+        let old_columns = old_text.chars().count();
+        let new_columns = new_text.chars().count();
+        let mut end = new.width;
+        if old_columns == new_columns {
+            while end > start && row_old[end - 1] == row_new[end - 1] {
+                end -= 1;
+            }
+            while !old_text.is_char_boundary(end) || !new_text.is_char_boundary(end) {
+                end += 1;
+            }
+        }
+        let column = new_text[..start].chars().count();
+        crossterm::QueueableCommand::queue(
+            stdout,
+            crossterm::cursor::MoveTo(column as u16, y as u16),
+        )?;
+        std::io::Write::write_all(stdout, &row_new[start..end])?;
+        if old_columns != new_columns {
+            let spaces = [b' '; 64];
+            let mut remaining = new.width - new_columns;
+            while remaining > 0 {
+                let length = remaining.min(spaces.len());
+                std::io::Write::write_all(stdout, &spaces[..length])?;
+                remaining -= length;
+            }
+        }
+        row_old.copy_from_slice(row_new);
     }
 
-    std::io::Write::flush(&mut stdout)?;
+    std::io::Write::flush(stdout)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_row_preserves_utf8_and_pads_buffer() {
+        let width = 40;
+        let mut buffer = ScreenBuffer {
+            width: width,
+            height: 1,
+            cells: vec![b'-'; width],
+        };
+        let text = " 123 └─ process";
+        buffer.set_line(0, text);
+        let row = std::str::from_utf8(buffer.row(0)).unwrap();
+        assert_eq!(row, format!("{text}{}", " ".repeat(width - text.len())));
+        assert_eq!(buffer.cells.len(), width);
+    }
+
+    #[test]
+    fn clip_preserves_multibyte_characters() {
+        let width = 5;
+        let mut buffer = ScreenBuffer {
+            width: width,
+            height: 1,
+            cells: vec![b' '; width],
+        };
+        buffer.set_line(0, "a└─b");
+        let row = std::str::from_utf8(buffer.row(0)).unwrap();
+        assert_eq!(row, "a└ ");
+    }
+
+    fn diff_writes_changed_bytes() {
+        let width = 12;
+        let mut output = Vec::new();
+
+        for (before, after) in [
+            ("unchanged", "unchanged"),
+            ("abcXdef", "abcYdef"),
+            ("a└z", "a├z"),
+            ("a└z", "aXz"),
+            ("------------", "└─ process"),
+        ] {
+            let mut old = ScreenBuffer {
+                width,
+                height: 1,
+                cells: vec![b' '; width],
+            };
+            let mut new = ScreenBuffer {
+                width,
+                height: 1,
+                cells: vec![b' '; width],
+            };
+            old.set_line(0, before);
+            new.set_line(0, after);
+            print_diff_to(&mut old, &new, &mut output).unwrap();
+            assert_eq!(old.row(0), new.row(0));
+            let length = output.len();
+            print_diff_to(&mut old, &new, &mut output).unwrap();
+            assert_eq!(output.len(), length);
+        }
+    }
 }
 
 pub fn choose_dialog(
