@@ -334,14 +334,10 @@ fn run_tui() -> Result<()> {
 }
 
 pub(crate) fn add_virtual_root_prefixes(processes: &mut [ProcessInfo]) {
-    use std::collections::HashSet;
-
-    let known_pids: HashSet<u32> = processes.iter().map(|p| p.pid).collect();
-
     let root_indices: Vec<usize> = processes
         .iter()
         .enumerate()
-        .filter(|(_, p)| p.ppid == 0 || !known_pids.contains(&p.ppid))
+        .filter(|(_, p)| p.prefix.is_empty())
         .map(|(i, _)| i)
         .collect();
 
@@ -363,6 +359,41 @@ pub(crate) fn add_virtual_root_prefixes(processes: &mut [ProcessInfo]) {
         };
 
         process.prefix.insert_str(0, prefix);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_virtual_root_prefixes_test() {
+        let mut processes = vec![
+            ProcessInfo {
+                pid: 0,
+                ppid: 0,
+                name: "proc1".to_owned(),
+                ..Default::default()
+            },
+            ProcessInfo {
+                pid: 1,
+                ppid: 0,
+                name: "proc2".to_owned(),
+                prefix: "└─ ".to_owned(),
+                ..Default::default()
+            },
+            ProcessInfo {
+                pid: 3,
+                ppid: 2,
+                name: "proc3".to_owned(),
+                ..Default::default()
+            },
+        ];
+
+        add_virtual_root_prefixes(&mut processes);
+        assert_eq!(processes[0].prefix, "├─ ");
+        assert_eq!(processes[1].prefix, "│  └─ ");
+        assert_eq!(processes[2].prefix, "└─ ");
     }
 }
 
@@ -499,7 +530,7 @@ fn is_hidden_by_collapsed_ancestor(
     let mut parent_pid = process.ppid;
     let mut visited = HashSet::new();
 
-    while parent_pid != 0 && visited.insert(parent_pid) {
+    while parent_pid != process.pid && visited.insert(parent_pid) {
         if collapsed.contains(&parent_pid) {
             return true;
         }
