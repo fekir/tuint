@@ -89,6 +89,7 @@ fn run_tui() -> Result<()> {
     let mut fullpath = false;
     let mut paused = false;
     let mut needs_redraw = true;
+    let mut header_details = true;
     let mut list = List::new();
     list.reload(fullpath)?;
 
@@ -108,7 +109,7 @@ fn run_tui() -> Result<()> {
                 last_height = new.height;
             }
 
-            create_headerbar(&new, &list, &mut headerbar);
+            create_headerbar(&new, &list, &mut headerbar, header_details);
             list.visible_height = old.height.saturating_sub(3 + headerbar.lines().count()) as usize;
             list.top = list.top.min(list.selected);
             list.top = list.top.max(
@@ -266,6 +267,11 @@ fn run_tui() -> Result<()> {
                         (KeyCode::Char('p'), KeyModifiers::NONE) => {
                             fullpath = !fullpath;
                             list.reload(fullpath)?;
+                            needs_redraw = true;
+                        }
+
+                        (KeyCode::Char('#'), KeyModifiers::NONE) => {
+                            header_details = !header_details;
                             needs_redraw = true;
                         }
 
@@ -492,7 +498,12 @@ impl List {
     }
 }
 
-fn create_headerbar(buf: &common::ui::ScreenBuffer, list: &List, headerbar: &mut String) {
+fn create_headerbar(
+    buf: &common::ui::ScreenBuffer,
+    list: &List,
+    headerbar: &mut String,
+    details: bool,
+) {
     let pid_width = list
         .alltasks
         .iter()
@@ -503,14 +514,15 @@ fn create_headerbar(buf: &common::ui::ScreenBuffer, list: &List, headerbar: &mut
     let prefix_w = 2;
     let status_w = 10;
     let rem = buf.width - prefix_w - status_w - 2;
-    let max_name = rem / 2;
-    let max_path = rem - max_name;
+    let max_name = rem;
 
     headerbar.clear();
-    system_status_lines(&list.metrics, buf.width, headerbar);
+    if details {
+        system_status_lines(&list.metrics, buf.width, headerbar);
+    }
     write!(
         headerbar,
-        "Task Manager TUI\n{marker} {pid:>pid_width$} {cpu:>5} {mem:>5} {time:>8} {name:<name_width$} ",
+        "{marker} {pid:>pid_width$} {cpu:>5} {mem:>5} {time:>8} {name:<name_width$} ",
         marker = ' ',
         cpu = "CPU%",
         mem = "MEM%",
@@ -587,8 +599,7 @@ fn draw_ui(buf: &mut common::ui::ScreenBuffer, list: &List, statusbar: &str, hea
     let prefix_w = 2;
     let status_w = 10;
     let rem = buf.width - prefix_w - status_w - 2;
-    let max_name = rem / 2;
-    let max_path = rem - max_name;
+    let max_name = rem;
 
     let sep = "-".repeat(buf.width);
     buf.set_line(row_y, &sep);
@@ -678,6 +689,7 @@ fn system_status_lines(metrics: &SystemMetrics, width: usize, output: &mut Strin
                 output.push_str("  ");
             }
             has_meter = true;
+            let index = index + 1;
             write!(output, "{index:>cpu_number_width$}[").unwrap();
             write_meter_graph(output, *usage, CPU_GRAPH_WIDTH);
             write!(output, "] {:5.1}%", usage).unwrap();
